@@ -269,7 +269,7 @@ impl SshKeyData {
     }
 
     /// Encode this key as an OpenSSH-formatted key using the specified `comment`
-    pub(crate) fn to_openssh_string(&self, comment: &str) -> Result<String> {
+    pub fn to_openssh_string(&self, comment: &str) -> Result<String> {
         let openssh_key = match &self.0 {
             SshKeyDataInner::Public(key_data) => {
                 let openssh_key = PublicKey::new(key_data.clone(), comment);
