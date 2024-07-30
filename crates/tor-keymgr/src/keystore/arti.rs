@@ -3,7 +3,6 @@
 //! See the [`ArtiNativeKeystore`] docs for more details.
 
 pub(crate) mod err;
-pub(crate) mod ssh;
 
 use std::io::{self, ErrorKind};
 use std::path::{Path, PathBuf};
@@ -14,7 +13,7 @@ use std::sync::Arc;
 use crate::keystore::{EncodableKey, ErasedKey, KeySpecifier, Keystore};
 use crate::{arti_path, ArtiPath, ArtiPathUnavailableError, KeyPath, KeyType, KeystoreId, Result};
 use err::{ArtiNativeKeystoreError, FilesystemAction};
-use ssh::UnparsedOpenSshKey;
+use crate::ssh::unparsed_key::UnparsedOpenSshKey;
 
 use fs_mistrust::{CheckedDir, Mistrust};
 use itertools::Itertools;

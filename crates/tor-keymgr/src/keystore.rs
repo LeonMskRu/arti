@@ -16,9 +16,10 @@ use tor_hscrypto::pk::{
 };
 use tor_llcrypto::pk::{curve25519, ed25519};
 
+use crate::err::SshKeyError;
 use crate::key_type::KeyType;
 use crate::ssh::{SshKeyAlgorithm, ED25519_EXPANDED_ALGORITHM_NAME, X25519_ALGORITHM_NAME};
-use crate::{Error, KeyPath, KeySpecifier, KeystoreId, Result, keystore::arti::ssh::UnparsedOpenSshKey};
+use crate::{KeyPath, KeySpecifier, KeystoreId, Result, ssh::unparsed_key::UnparsedOpenSshKey};
 
 use downcast_rs::{impl_downcast, Downcast};
 
@@ -126,9 +127,9 @@ macro_rules! ssh_to_internal_erased {
             $key_data_ty::Other(other) => match algo {
                 SshKeyAlgorithm::X25519 => Ok($x25519_fn(&other).map(Box::new)?),
                 SshKeyAlgorithm::Ed25519Expanded => Ok($expanded_ed25519_fn(&other).map(Box::new)?),
-                _ => Err(Error::UnsupportedKeyAlgorithm(algo)),
+                _ => Err($crate::err::Error::SshKey(SshKeyError::UnsupportedKeyAlgorithm(algo))),
             },
-            _ => Err(Error::UnsupportedKeyAlgorithm(algo)),
+            _ => Err($crate::err::Error::SshKey(SshKeyError::UnsupportedKeyAlgorithm(algo))),
         }
     }};
 }
@@ -241,9 +242,9 @@ impl SshKeyData {
             KeyData::Ed25519(_) => Ok(()),
             KeyData::Other(_) => match algo {
                 SshKeyAlgorithm::X25519 => Ok(()),
-                _ => Err(Error::UnsupportedKeyAlgorithm(algo)),
+                _ => Err(SshKeyError::UnsupportedKeyAlgorithm(algo)),
             },
-            _ => Err(Error::UnsupportedKeyAlgorithm(algo)),
+            _ => Err(SshKeyError::UnsupportedKeyAlgorithm(algo)),
         }?;
 
         Ok(Self(SshKeyDataInner::Public(key)))
@@ -255,16 +256,16 @@ impl SshKeyData {
     pub(crate) fn try_from_keypair_data(key: KeypairData) -> Result<Self> {
         let algo = SshKeyAlgorithm::from(
             key.algorithm()
-                .map_err(into_internal!("encrypted keys are not yet supported"))?,
+                .map_err(|e| SshKeyError::Encrypted { err: e.into() })?,
         );
         let () = match key {
             KeypairData::Ed25519(_) => Ok(()),
             KeypairData::Other(_) => match algo {
                 SshKeyAlgorithm::X25519 => Ok(()),
                 SshKeyAlgorithm::Ed25519Expanded => Ok(()),
-                _ => Err(Error::UnsupportedKeyAlgorithm(algo)),
+                _ => Err(SshKeyError::UnsupportedKeyAlgorithm(algo)),
             },
-            _ => Err(Error::UnsupportedKeyAlgorithm(algo)),
+            _ => Err(SshKeyError::UnsupportedKeyAlgorithm(algo)),
         }?;
 
         Ok(Self(SshKeyDataInner::Private(key)))
@@ -399,7 +400,7 @@ impl EncodableKey for curve25519::StaticKeypair {
         );
         let keypair = OpaqueKeypair::new(self.secret.to_bytes().to_vec(), ssh_public);
 
-        SshKeyData::try_from_keypair_data(ssh_key::private::KeypairData::Other(keypair))
+        Ok(SshKeyData::try_from_keypair_data(ssh_key::private::KeypairData::Other(keypair))?)
     }
 }
 
@@ -420,7 +421,7 @@ impl EncodableKey for curve25519::PublicKey {
         let ssh_public =
             OpaquePublicKey::new(self.to_bytes().to_vec(), Algorithm::Other(algorithm_name));
 
-        SshKeyData::try_from_key_data(KeyData::Other(ssh_public))
+        Ok(SshKeyData::try_from_key_data(KeyData::Other(ssh_public))?)
     }
 }
 
@@ -449,7 +450,7 @@ impl EncodableKey for ed25519::Keypair {
             private: Ed25519PrivateKey::from_bytes(self.as_bytes()),
         };
 
-        SshKeyData::try_from_keypair_data(KeypairData::Ed25519(keypair))
+        Ok(SshKeyData::try_from_keypair_data(KeypairData::Ed25519(keypair))?)
     }
 }
 
@@ -466,7 +467,7 @@ impl EncodableKey for ed25519::PublicKey {
     fn as_ssh_key_data(&self) -> Result<SshKeyData> {
         let key_data = Ed25519PublicKey(self.to_bytes());
 
-        SshKeyData::try_from_key_data(ssh_key::public::KeyData::Ed25519(key_data))
+        Ok(SshKeyData::try_from_key_data(ssh_key::public::KeyData::Ed25519(key_data))?)
     }
 }
 
@@ -502,7 +503,7 @@ impl EncodableKey for ed25519::ExpandedKeypair {
 
         let keypair = OpaqueKeypair::new(self.to_secret_key_bytes().to_vec(), ssh_public);
 
-        SshKeyData::try_from_keypair_data(ssh_key::private::KeypairData::Other(keypair))
+        Ok(SshKeyData::try_from_keypair_data(ssh_key::private::KeypairData::Other(keypair))?)
     }
 }
 
