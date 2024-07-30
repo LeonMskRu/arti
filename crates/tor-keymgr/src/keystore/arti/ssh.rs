@@ -19,7 +19,7 @@ use crate::UnknownKeyTypeError;
 /// value is unchecked/unvalidated, and might not actually be a valid OpenSSH key.
 ///
 /// The inner value is zeroed on drop.
-pub struct UnparsedOpenSshKey {
+pub(crate) struct UnparsedOpenSshKey {
     /// The contents of an OpenSSH key file.
     inner: Zeroizing<String>,
     /// The path of the file (for error reporting).
