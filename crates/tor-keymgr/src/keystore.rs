@@ -3,6 +3,8 @@
 pub(crate) mod arti;
 pub(crate) mod ephemeral;
 
+use std::path::PathBuf;
+
 use rand::{CryptoRng, RngCore};
 use ssh_key::private::{Ed25519Keypair, Ed25519PrivateKey, KeypairData, OpaqueKeypair};
 use ssh_key::public::{Ed25519PublicKey, KeyData, OpaquePublicKey};
@@ -16,7 +18,7 @@ use tor_llcrypto::pk::{curve25519, ed25519};
 
 use crate::key_type::KeyType;
 use crate::ssh::{SshKeyAlgorithm, ED25519_EXPANDED_ALGORITHM_NAME, X25519_ALGORITHM_NAME};
-use crate::{Error, KeyPath, KeySpecifier, KeystoreId, Result};
+use crate::{Error, KeyPath, KeySpecifier, KeystoreId, Result, UnparsedOpenSshKey};
 
 use downcast_rs::{impl_downcast, Downcast};
 
@@ -290,6 +292,15 @@ impl SshKeyData {
         };
 
         Ok(openssh_key)
+    }
+    
+    /// Parse an OpenSSH key, convert the key material into a known key type, and return the
+    /// type-erased value.
+    ///
+    /// The caller is expected to downcast the value returned to a concrete type.
+    pub fn from_openssh_string(key: String, path: PathBuf, key_type: &KeyType) -> Result<ErasedKey> {
+        let unparsed = UnparsedOpenSshKey::new(key, path);
+        unparsed.parse_ssh_format_erased(key_type)
     }
 
     /// Convert the key material into a known key type,
