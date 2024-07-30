@@ -16,10 +16,12 @@ use once_cell::sync::OnceCell;
 use tor_error::{bad_api_usage, internal};
 use tor_error::{debug_report, Bug};
 use tor_guardmgr::VanguardMode;
-use tor_linkspec::{CircTarget, HasRelayIds as _, OwnedCircTarget, RelayIdSet};
+use tor_linkspec::{
+    CircTarget, HasRelayIds as _, IntoOwnedChanTarget, OwnedChanTarget, OwnedCircTarget,
+};
 use tor_netdir::{NetDir, NetDirProvider, Relay};
 use tor_proto::circuit::{self, CircParameters, ClientCirc};
-use tor_relay_selection::{LowLevelRelayPredicate, RelayExclusion, RelaySelector, RelayUsage};
+use tor_relay_selection::{LowLevelRelayPredicate, RelayExclusion};
 use tor_rtcompat::{
     scheduler::{TaskHandle, TaskSchedule},
     Runtime, SleepProviderExt,
@@ -31,6 +33,9 @@ use std::result::Result as StdResult;
 pub use config::HsCircPoolConfig;
 
 use self::pool::HsCircPrefs;
+
+#[cfg(all(feature = "vanguards", feature = "hs-common"))]
+use crate::path::hspath::select_middle_for_vanguard_circ;
 
 /// The (onion-service-related) purpose for which a given circuit is going to be
 /// used.
@@ -161,6 +166,30 @@ pub(crate) enum HsCircStubKind {
     Extended,
 }
 
+impl HsCircStubKind {
+    /// Return the number of hops this `HsCircKind` ought to have when using the specified
+    /// [`VanguardMode`].
+    pub(crate) fn num_hops(&self, mode: VanguardMode) -> StdResult<usize, Bug> {
+        use HsCircStubKind::*;
+        use VanguardMode::*;
+
+        let len = match (mode, self) {
+            #[cfg(all(feature = "vanguards", feature = "hs-common"))]
+            (Lite, _) => 3,
+            #[cfg(all(feature = "vanguards", feature = "hs-common"))]
+            (Full, Short) => 3,
+            #[cfg(all(feature = "vanguards", feature = "hs-common"))]
+            (Full, Extended) => 4,
+            (Disabled, _) => 3,
+            (_, _) => {
+                return Err(internal!("Unsupported vanguard mode {mode}"));
+            }
+        };
+
+        Ok(len)
+    }
+}
+
 /// An object to provide circuits for implementing onion services.
 pub struct HsCircPool<R: Runtime> {
     /// An underlying circuit manager, used for constructing circuits.
@@ -243,16 +272,16 @@ impl<R: Runtime> HsCircPool<R> {
         //   * the weighting rules for selecting rendezvous points are the same
         //     as those for selecting an arbitrary middle relay.
         let circ = self
-            .take_or_launch_stub_circuit::<OwnedCircTarget>(netdir, None, HsCircStubKind::Short)
+            .take_or_launch_stub_circuit::<OwnedCircTarget>(netdir, None, HsCircStubKind::Extended)
             .await?;
 
         #[cfg(all(feature = "vanguards", feature = "hs-common"))]
         if matches!(
             self.vanguard_mode(),
             VanguardMode::Full | VanguardMode::Lite
-        ) && circ.kind != HsCircStubKind::Short
+        ) && circ.kind != HsCircStubKind::Extended
         {
-            return Err(internal!("wanted a SHORT circuit, but got EXTENDED?!").into());
+            return Err(internal!("wanted a EXTENDED circuit, but got SHORT?!").into());
         }
 
         let path = circ.path_ref();
@@ -468,7 +497,7 @@ impl<R: Runtime> HsCircPool<R> {
         // Return the circuit we found before, if any.
         if let Some(circuit) = found_usable_circ {
             let circuit = self
-                .maybe_extend_stub_circuit(netdir, circuit, kind)
+                .maybe_extend_stub_circuit(netdir, circuit, avoid_target, kind)
                 .await?;
             self.ensure_suitable_circuit(&circuit, avoid_target, kind)?;
             return Ok(circuit);
@@ -491,62 +520,75 @@ impl<R: Runtime> HsCircPool<R> {
     }
 
     /// Return a circuit of the specified `kind`, built from `circuit`.
-    async fn maybe_extend_stub_circuit(
+    async fn maybe_extend_stub_circuit<T>(
         &self,
         netdir: &NetDir,
         circuit: HsCircStub,
+        avoid_target: Option<&T>,
         kind: HsCircStubKind,
-    ) -> Result<HsCircStub> {
+    ) -> Result<HsCircStub>
+    where
+        T: CircTarget,
+    {
         match self.vanguard_mode() {
             #[cfg(all(feature = "vanguards", feature = "hs-common"))]
             VanguardMode::Full => {
                 // SHORT circuit stubs need to be extended by one hop to become EXTENDED stubs
                 // if we're using full vanguards.
+                self.extend_full_vanguards_circuit(netdir, circuit, avoid_target, kind)
+                    .await
             }
             _ => {
                 let HsCircStub { circ, kind: _ } = circuit;
 
-                return Ok(HsCircStub { circ, kind });
+                Ok(HsCircStub { circ, kind })
             }
         }
+    }
 
+    /// Extend the specified full vanguard circuit if necessary.
+    #[cfg(all(feature = "vanguards", feature = "hs-common"))]
+    async fn extend_full_vanguards_circuit<T>(
+        &self,
+        netdir: &NetDir,
+        circuit: HsCircStub,
+        avoid_target: Option<&T>,
+        kind: HsCircStubKind,
+    ) -> Result<HsCircStub>
+    where
+        T: CircTarget,
+    {
         match (circuit.kind, kind) {
             (HsCircStubKind::Short, HsCircStubKind::Extended) => {
                 debug!("Wanted EXTENDED circuit, but got SHORT; extending by 1 hop...");
                 let params = CircParameters::default();
-                let usage = RelayUsage::middle_relay(Some(&RelayUsage::middle_relay(None)));
                 let circ_path = circuit.circ.path_ref();
 
                 // A SHORT circuit is a 3-hop circuit.
                 debug_assert_eq!(circ_path.hops().len(), 3);
 
-                // Like in VanguardHsPathBuilder::pick_path, we only want to exclude the L2 and L3
-                // guards (so we skip over the guard)
-                let skip_n = 1;
-                let mut exclude_ids = RelayIdSet::new();
-                for hop in circ_path
-                    .iter()
-                    .skip(skip_n)
-                    .flat_map(|hop| hop.as_chan_target())
-                {
-                    exclude_ids.extend(hop.identities().map(|id| id.to_owned()));
-                }
-
-                let exclusion = RelayExclusion::exclude_identities(exclude_ids);
-                let selector = RelaySelector::new(usage, exclusion);
-                let target = {
-                    let mut rng = rand::thread_rng();
-                    let (relay, info) = selector.select_relay(&mut rng, netdir);
-                    relay.ok_or_else(|| Error::NoRelay {
-                        path_kind: "vanguard EXTENDED",
-                        role: "final hop",
-                        problem: info.to_string(),
-                    })?
+                let target_exclusion = if let Some(target) = &avoid_target {
+                    RelayExclusion::exclude_identities(
+                        target.identities().map(|id| id.to_owned()).collect(),
+                    )
+                } else {
+                    RelayExclusion::no_relays_excluded()
                 };
+                let hops = circ_path
+                    .iter()
+                    .flat_map(|hop| hop.as_chan_target())
+                    .map(IntoOwnedChanTarget::to_owned)
+                    .collect::<Vec<OwnedChanTarget>>();
+                let extra_hop = select_middle_for_vanguard_circ(
+                    &hops,
+                    netdir,
+                    &target_exclusion,
+                    &mut rand::thread_rng(),
+                )?;
 
                 // Since full vanguards are enabled and the circuit we got is SHORT,
                 // we need to extend it by another hop to make it EXTENDED before returning it
-                let circ = self.extend_circ(circuit, params, target).await?;
+                let circ = self.extend_circ(circuit, params, extra_hop).await?;
 
                 Ok(HsCircStub { circ, kind })
             }
@@ -586,20 +628,8 @@ impl<R: Runtime> HsCircPool<R> {
         let circ_path_len = circ.path_ref().n_hops();
         let mode = self.vanguard_mode();
 
-        // TODO: the expected circuit lengths are hard-coded and duplicated in hspath.rs
         // TODO(#1457): somehow unify the path length checks
-        let expected_len = match (mode, kind) {
-            #[cfg(all(feature = "vanguards", feature = "hs-common"))]
-            (VanguardMode::Lite, _) => 3,
-            #[cfg(all(feature = "vanguards", feature = "hs-common"))]
-            (VanguardMode::Full, HsCircStubKind::Short) => 3,
-            #[cfg(all(feature = "vanguards", feature = "hs-common"))]
-            (VanguardMode::Full, HsCircStubKind::Extended) => 4,
-            (VanguardMode::Disabled, _) => 3,
-            (_, _) => {
-                return Err(internal!("Unsupported vanguard mode {mode}"));
-            }
-        };
+        let expected_len = kind.num_hops(mode)?;
 
         if circ_path_len != expected_len {
             return Err(internal!(
@@ -967,6 +997,7 @@ mod test {
         .unwrap()
     }
 
+    // Prevents TROVE-2024-005 (arti#1424)
     #[test]
     fn pool_with_vanguards_disabled() {
         MockRuntime::test_with_various(|runtime| async move {

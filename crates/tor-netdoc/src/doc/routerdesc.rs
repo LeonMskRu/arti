@@ -58,22 +58,37 @@ pub type RdDigest = [u8; 20];
 
 /// A router descriptor, with possible annotations.
 #[allow(dead_code)]
+#[cfg_attr(
+    feature = "dangerous-expose-struct-fields",
+    visible::StructFields(pub),
+    non_exhaustive
+)]
 pub struct AnnotatedRouterDesc {
     /// Annotation for this router descriptor; possibly empty.
+    #[cfg_attr(docsrs, doc(cfg(feature = "dangerous-expose-struct-fields")))]
     ann: RouterAnnotation,
     /// Underlying router descriptor; signatures not checked yet.
+    #[cfg_attr(docsrs, doc(cfg(feature = "dangerous-expose-struct-fields")))]
     router: UncheckedRouterDesc,
 }
 
 /// Annotations about a router descriptor, as stored on disc.
 #[allow(dead_code)] // don't warn about fields not getting read.
+#[cfg_attr(
+    feature = "dangerous-expose-struct-fields",
+    visible::StructFields(pub),
+    non_exhaustive
+)]
 #[derive(Default)]
 pub struct RouterAnnotation {
     /// Description of where we got this router descriptor
+    #[cfg_attr(docsrs, doc(cfg(feature = "dangerous-expose-struct-fields")))]
     source: Option<String>,
     /// When this descriptor was first downloaded.
+    #[cfg_attr(docsrs, doc(cfg(feature = "dangerous-expose-struct-fields")))]
     downloaded: Option<time::SystemTime>,
     /// Description of what we're willing to use this descriptor for.
+    #[cfg_attr(docsrs, doc(cfg(feature = "dangerous-expose-struct-fields")))]
     purpose: Option<String>,
 }
 
@@ -143,7 +158,7 @@ pub struct RouterDesc {
     /// Key for extending a circuit to this relay using the
     /// (deprecated) TAP protocol.
     #[cfg_attr(docsrs, doc(cfg(feature = "dangerous-expose-struct-fields")))]
-    tap_onion_key: ll::pk::rsa::PublicKey,
+    tap_onion_key: Option<ll::pk::rsa::PublicKey>,
     /// List of subprotocol versions supported by this relay.
     #[cfg_attr(docsrs, doc(cfg(feature = "dangerous-expose-struct-fields")))]
     proto: Arc<tor_protover::Protocols>,
@@ -274,14 +289,8 @@ static ROUTER_BODY_RULES: Lazy<SectionRules<RouterKwd>> = Lazy::new(|| {
     rules.add(PUBLISHED.rule().required());
     rules.add(FINGERPRINT.rule());
     rules.add(UPTIME.rule().args(1..));
-    rules.add(ONION_KEY.rule().no_args().required().obj_required());
-    rules.add(
-        ONION_KEY_CROSSCERT
-            .rule()
-            .required()
-            .no_args()
-            .obj_required(),
-    );
+    rules.add(ONION_KEY.rule().no_args().obj_required());
+    rules.add(ONION_KEY_CROSSCERT.rule().no_args().obj_required());
     rules.add(NTOR_ONION_KEY.rule().required().args(1..));
     rules.add(
         NTOR_ONION_KEY_CROSSCERT
@@ -611,21 +620,34 @@ impl RouterDesc {
         };
 
         // TAP key
-        let tap_onion_key: ll::pk::rsa::PublicKey = body
-            .required(ONION_KEY)?
-            .parse_obj::<RsaPublic>("RSA PUBLIC KEY")?
-            .check_len_eq(1024)?
-            .check_exponent(65537)?
-            .into();
+        let tap_onion_key: Option<ll::pk::rsa::PublicKey> = if let Some(tok) = body.get(ONION_KEY) {
+            Some(
+                tok.parse_obj::<RsaPublic>("RSA PUBLIC KEY")?
+                    .check_len_eq(1024)?
+                    .check_exponent(65537)?
+                    .into(),
+            )
+        } else {
+            None
+        };
 
         // TAP crosscert
-        let tap_crosscert_sig = {
-            let cc_tok = body.required(ONION_KEY_CROSSCERT)?;
+        let tap_crosscert_sig = if let Some(cc_tok) = body.get(ONION_KEY_CROSSCERT) {
             let cc_val = cc_tok.obj("CROSSCERT")?;
             let mut signed = Vec::new();
             signed.extend(rsa_identity.as_bytes());
             signed.extend(identity_cert.peek_signing_key().as_bytes());
-            ll::pk::rsa::ValidatableRsaSignature::new(&tap_onion_key, &cc_val, &signed)
+            Some(ll::pk::rsa::ValidatableRsaSignature::new(
+                tap_onion_key.as_ref().ok_or_else(|| {
+                    EK::MissingToken.with_msg("onion-key-crosscert without onion-key")
+                })?,
+                &cc_val,
+                &signed,
+            ))
+        } else if tap_onion_key.is_some() {
+            return Err(EK::MissingToken.with_msg("onion-key without onion-key-crosscert"));
+        } else {
+            None
         };
 
         // List of subprotocol versions
@@ -732,13 +754,15 @@ impl RouterDesc {
                 .with_msg("missing public key")
                 .with_source(err)
         })?;
-        let signatures: Vec<Box<dyn ll::pk::ValidatableSignature>> = vec![
+        let mut signatures: Vec<Box<dyn ll::pk::ValidatableSignature>> = vec![
             Box::new(rsa_signature),
             Box::new(ed_signature),
             Box::new(identity_sig),
             Box::new(cc_sig),
-            Box::new(tap_crosscert_sig),
         ];
+        if let Some(s) = tap_crosscert_sig {
+            signatures.push(Box::new(s));
+        }
 
         let identity_cert = identity_cert.dangerously_assume_timely();
         let crosscert_cert = crosscert_cert.dangerously_assume_timely();
@@ -899,6 +923,7 @@ mod test {
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     const TESTDATA: &str = include_str!("../../testdata/routerdesc1.txt");
+    const TESTDATA2: &str = include_str!("../../testdata/routerdesc2.txt");
 
     fn read_bad(fname: &str) -> String {
         use std::fs;
@@ -962,6 +987,18 @@ mod test {
                 "[2a01:4f9:2a:2145::2]:443".parse().unwrap(),
             ]
         );
+        assert!(rd.tap_onion_key.is_some());
+
+        Ok(())
+    }
+
+    #[test]
+    fn parse_no_tap_key() -> Result<()> {
+        use tor_checkable::{SelfSigned, Timebound};
+        let rd = RouterDesc::parse(TESTDATA2)?
+            .check_signature()?
+            .dangerously_assume_timely();
+        assert!(rd.tap_onion_key.is_none());
 
         Ok(())
     }

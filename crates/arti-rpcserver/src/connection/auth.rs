@@ -110,16 +110,15 @@ struct SupportedAuth {
     schemes: Vec<AuthenticationScheme>,
 }
 
-impl rpc::Method for AuthQuery {
+impl rpc::RpcMethod for AuthQuery {
     type Output = SupportedAuth;
     type Update = rpc::NoUpdates;
-    type Error = rpc::RpcError;
 }
 /// Implement `auth:AuthQuery` on a connection.
 async fn conn_authquery(
     _conn: Arc<Connection>,
     _query: Box<AuthQuery>,
-    _ctx: Box<dyn rpc::Context>,
+    _ctx: Arc<dyn rpc::Context>,
 ) -> Result<SupportedAuth, rpc::RpcError> {
     // Right now, every connection supports the same scheme.
     Ok(SupportedAuth {
@@ -149,10 +148,9 @@ struct AuthenticateReply {
     session: rpc::ObjectId,
 }
 
-impl rpc::Method for Authenticate {
+impl rpc::RpcMethod for Authenticate {
     type Output = AuthenticateReply;
     type Update = rpc::NoUpdates;
-    type Error = rpc::RpcError;
 }
 
 /// An error during authentication.
@@ -174,7 +172,7 @@ impl tor_error::HasKind for AuthenticationFailure {
 async fn authenticate_connection(
     unauth: Arc<Connection>,
     method: Box<Authenticate>,
-    ctx: Box<dyn rpc::Context>,
+    ctx: Arc<dyn rpc::Context>,
 ) -> Result<AuthenticateReply, rpc::RpcError> {
     match method.scheme {
         // For now, we only support AF_UNIX connections, and we assume that if

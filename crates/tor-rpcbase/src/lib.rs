@@ -51,7 +51,7 @@ pub use dispatch::{DispatchTable, InvokeError, UpdateSink};
 pub use err::RpcError;
 pub use method::{
     check_method_names, is_method_name, iter_method_names, DeserMethod, DynMethod,
-    InvalidMethodName, Method, NoUpdates,
+    InvalidMethodName, Method, NoUpdates, RpcMethod,
 };
 pub use obj::{Object, ObjectArcExt, ObjectId};
 
@@ -70,9 +70,6 @@ pub mod templates {
 }
 
 /// An error returned from [`ContextExt::lookup`].
-///
-/// TODO RPC: This type should be made to conform with however we represent RPC
-/// errors.
 #[derive(Debug, Clone, thiserror::Error)]
 #[non_exhaustive]
 pub enum LookupError {
@@ -87,8 +84,19 @@ pub enum LookupError {
     WrongType(ObjectId),
 }
 
+impl tor_error::HasKind for LookupError {
+    fn kind(&self) -> tor_error::ErrorKind {
+        use tor_error::ErrorKind as EK;
+        use LookupError as E;
+        match self {
+            E::NoObject(_) => EK::RpcObjectNotFound,
+            E::WrongType(_) => EK::RpcInvalidRequest,
+        }
+    }
+}
+
 /// A trait describing the context in which an RPC method is executed.
-pub trait Context: Send {
+pub trait Context: Send + Sync {
     /// Look up an object by identity within this context.
     fn lookup_object(&self, id: &ObjectId) -> Result<Arc<dyn Object>, LookupError>;
 
@@ -143,6 +151,12 @@ pub enum SendUpdateError {
     ConnectionClosed,
 }
 
+impl tor_error::HasKind for SendUpdateError {
+    fn kind(&self) -> tor_error::ErrorKind {
+        tor_error::ErrorKind::Internal
+    }
+}
+
 impl From<Infallible> for SendUpdateError {
     fn from(_: Infallible) -> Self {
         unreachable!()
@@ -167,14 +181,60 @@ pub trait ContextExt: Context {
             .map_err(|_| LookupError::WrongType(id.clone()))
     }
 }
+
 impl<T: Context> ContextExt for T {}
+
+/// Try to find an appropriate function for calling a given RPC method on a
+/// given RPC-visible object.
+///
+/// On success, return a Future.
+///
+/// Differs from using `DispatchTable::invoke()` in that it drops its lock
+/// on the dispatch table before invoking the method.
+pub fn invoke_rpc_method(
+    ctx: Arc<dyn Context>,
+    obj: Arc<dyn Object>,
+    method: Box<dyn DynMethod>,
+    sink: dispatch::BoxedUpdateSink,
+) -> Result<dispatch::RpcResultFuture, InvokeError> {
+    let invocable = ctx
+        .dispatch_table()
+        .read()
+        .expect("poisoned lock")
+        .rpc_invoker(obj.as_ref(), method.as_ref())?;
+
+    invocable.invoke(obj, method, ctx, sink)
+}
+
+/// Invoke the given `method` on `obj` within `ctx`, and return its
+/// actual result type.
+///
+/// Unlike `invoke_rpc_method`, this method does not return a type-erased result,
+/// and does not require that the result can be serialized as an RPC object.
+///
+/// Differs from using `DispatchTable::invoke_special()` in that it drops its lock
+/// on the dispatch table before invoking the method.
+pub async fn invoke_special_method<M: Method>(
+    ctx: Arc<dyn Context>,
+    obj: Arc<dyn Object>,
+    method: Box<M>,
+) -> Result<Box<M::Output>, InvokeError> {
+    let invocable = ctx
+        .dispatch_table()
+        .read()
+        .expect("poisoned lock")
+        .special_invoker::<M>(obj.as_ref())?;
+
+    invocable
+        .invoke_special(obj, method, ctx)?
+        .await
+        .downcast()
+        .map_err(|_| InvokeError::Bug(tor_error::internal!("Downcast to wrong type")))
+}
 
 /// A serializable empty object.
 ///
 /// Used when we need to declare that a method returns nothing.
-///
-/// TODO RPC: Perhaps we can get () to serialize as {} and make this an alias
-/// for ().
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, Default)]
 #[non_exhaustive]
 pub struct Nil {}
@@ -187,4 +247,44 @@ pub const NIL: Nil = Nil {};
 pub struct SingletonId {
     /// The ID of the object that we're returning.
     id: ObjectId,
+}
+
+#[cfg(test)]
+mod test {
+    // @@ begin test lint list maintained by maint/add_warning @@
+    #![allow(clippy::bool_assert_comparison)]
+    #![allow(clippy::clone_on_copy)]
+    #![allow(clippy::dbg_macro)]
+    #![allow(clippy::mixed_attributes_style)]
+    #![allow(clippy::print_stderr)]
+    #![allow(clippy::print_stdout)]
+    #![allow(clippy::single_char_pattern)]
+    #![allow(clippy::unwrap_used)]
+    #![allow(clippy::unchecked_duration_subtraction)]
+    #![allow(clippy::useless_vec)]
+    #![allow(clippy::needless_pass_by_value)]
+    //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
+
+    use futures::SinkExt as _;
+    use futures_await_test::async_test;
+
+    use super::*;
+    use crate::dispatch::test::{Ctx, GetKids, Swan};
+
+    #[async_test]
+    async fn invoke() {
+        let ctx = Arc::new(Ctx::from(DispatchTable::from_inventory()));
+        let discard = || Box::pin(futures::sink::drain().sink_err_into());
+        let r = invoke_rpc_method(ctx.clone(), Arc::new(Swan), Box::new(GetKids), discard())
+            .unwrap()
+            .await
+            .unwrap();
+        assert_eq!(serde_json::to_string(&r).unwrap(), r#"{"v":"cygnets"}"#);
+
+        let r = invoke_special_method(ctx, Arc::new(Swan), Box::new(GetKids))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(r.v, "cygnets");
+    }
 }

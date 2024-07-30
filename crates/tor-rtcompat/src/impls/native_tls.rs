@@ -35,6 +35,18 @@ where
             Err(e) => Err(IoError::new(std::io::ErrorKind::Other, e)),
         }
     }
+
+    fn export_keying_material(
+        &self,
+        _len: usize,
+        _label: &[u8],
+        _context: Option<&[u8]>,
+    ) -> IoResult<Vec<u8>> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            tor_error::bad_api_usage!("native-tls does not support exporting keying material"),
+        ))
+    }
 }
 
 /// An implementation of [`TlsConnector`] built with `native_tls`.
@@ -80,11 +92,19 @@ where
             .danger_accept_invalid_certs(true)
             .danger_accept_invalid_hostnames(true);
 
+        // We don't participate in the web PKI, so there is no reason for us to load the standard
+        // list of CAs and CRLs. This can save us an megabyte or two.
+        builder.disable_built_in_roots(true);
+
         let connector = builder.into();
 
         NativeTlsConnector {
             connector,
             _phantom: std::marker::PhantomData,
         }
+    }
+
+    fn supports_keying_material_export(&self) -> bool {
+        false
     }
 }

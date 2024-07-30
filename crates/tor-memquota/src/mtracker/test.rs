@@ -32,23 +32,26 @@ use tor_rtmock::MockRuntime;
 
 //---------- useful utilities ----------
 
+pub(crate) const TEST_DEFAULT_LIMIT: usize = mby(20);
+pub(crate) const TEST_DEFAULT_LOWWATER: usize = mby(15);
+
 fn secs(s: u64) -> CoarseDuration {
     Duration::from_secs(s).into()
 }
 
-fn mby(mib: usize) -> usize {
+pub(crate) const fn mby(mib: usize) -> usize {
     mib * 1024 * 1024
 }
 
 fn mk_config() -> Config {
     Config::builder()
-        .max(mby(20))
-        .low_water(mby(15))
+        .max(TEST_DEFAULT_LIMIT)
+        .low_water(TEST_DEFAULT_LOWWATER)
         .build()
         .unwrap()
 }
 
-fn mk_tracker(rt: &impl Runtime) -> Arc<MemoryQuotaTracker> {
+pub(crate) fn mk_tracker(rt: &impl Runtime) -> Arc<MemoryQuotaTracker> {
     MemoryQuotaTracker::new(&rt, mk_config()).unwrap()
 }
 
@@ -274,20 +277,24 @@ impl UnifiedP {
         let now = rt.now_coarse();
 
         acct.register_participant_with(now, |partn| {
-            Ok::<_, Void>(Arc::new(UnifiedP {
-                acct: acct.clone(),
-                state: PartnState {
-                    partn,
-                    age: Some(now - age),
-                    show: show.to_string(),
-                    used: 0,
-                    reclaimed: Ok(()),
-                }
-                .into(),
-            }))
+            Ok::<_, Void>((
+                Arc::new(UnifiedP {
+                    acct: acct.clone(),
+                    state: PartnState {
+                        partn,
+                        age: Some(now - age),
+                        show: show.to_string(),
+                        used: 0,
+                        reclaimed: Ok(()),
+                    }
+                    .into(),
+                }),
+                (),
+            ))
         })
         .unwrap()
         .void_unwrap()
+        .0
     }
 
     async fn settle_check_consistency<'i>(
@@ -458,6 +465,35 @@ fn cache() {
     });
 }
 
+#[traced_test]
+#[test]
+fn explicit_destroy() {
+    test_with_various_mocks(|rt| async move {
+        let trk = mk_tracker(&rt);
+
+        let p0 = UnifiedP::new(&rt, &trk, None, secs(0), "0");
+        let p1 = p0.clone();
+
+        p0.lock().claim(mby(1)).unwrap();
+        UnifiedP::settle_check_consistency(&rt, &trk, [&p0]).await;
+
+        p1.lock().claim(mby(2)).unwrap();
+        UnifiedP::settle_check_consistency(&rt, &trk, [&p0]).await;
+
+        p1.lock().partn.clone().destroy_participant();
+
+        rt.advance_until_stalled().await;
+        check_consistency_general(&trk, |collector| {
+            collector.note_account(&p0.acct, Ok(()));
+            // We don't note the participation, since it's dead.
+        });
+
+        assert!(p1.lock().claim(mby(3)).is_err());
+
+        // Now we drop everything.  This exercises much of the teardown!
+    });
+}
+
 //---------- test client with multiple participants per account ----------
 
 #[derive(Debug)]
@@ -492,19 +528,24 @@ impl ComplexAH {
     }
 
     fn add_p(&mut self, now: CoarseInstant, age: CoarseDuration, show: impl Display) -> usize {
-        let cp = self
+        let (cp, x) = self
             .acct
             .register_participant_with(now, |partn| {
-                Ok::<_, Void>(Arc::new(TestPartn::from(PartnState {
-                    partn,
-                    age: Some(now - age),
-                    show: show.to_string(),
-                    used: 0,
-                    reclaimed: Ok(()),
-                })))
+                Ok::<_, Void>((
+                    Arc::new(TestPartn::from(PartnState {
+                        partn,
+                        age: Some(now - age),
+                        show: show.to_string(),
+                        used: 0,
+                        reclaimed: Ok(()),
+                    })),
+                    42,
+                ))
             })
             .unwrap()
             .void_unwrap();
+
+        assert_eq!(x, 42);
 
         let i = self.ps.len();
         self.ps.push(cp);

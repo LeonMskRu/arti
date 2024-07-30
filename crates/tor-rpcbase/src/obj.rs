@@ -29,10 +29,6 @@ pub trait Object: DowncastSync + Send + Sync + 'static {
     /// stream, it needs to declare what RPC context (like a `TorClient`) it's
     /// using, which requires that some identifier for that context exist
     /// outside of the RPC session that owns it.
-    //
-    // TODO RPC: It would be neat if this were automatically set to true if and
-    // only if there were any "out-of-session psuedomethods" defined on the
-    // object.
     fn expose_outside_of_session(&self) -> bool {
         false
     }
@@ -245,7 +241,7 @@ define_derive_deftly! {
 /// #[deftly(rpc(expose_outside_of_session))]
 /// struct Visible {}
 /// ```
-    pub Object expect items =
+    export Object expect items:
 
     impl<$tgens> $ttype where
         // We need this restriction in case there are generics
@@ -262,7 +258,11 @@ define_derive_deftly! {
         #[doc(hidden)]
         fn make_cast_table() -> $crate::CastTable {
             ${if tmeta(rpc(downcastable_to)) {
-                $crate::cast_table_deftness_helper!{ ${tmeta(rpc(downcastable_to)) } }
+                $crate::cast_table_deftness_helper!{
+                    // TODO ideally we would support multiple downcastable_to rather
+                    // than a single list, and use `as ty`
+                    ${tmeta(rpc(downcastable_to)) as token_stream}
+                }
             } else {
                 $crate::CastTable::default()
             }}
@@ -282,9 +282,7 @@ define_derive_deftly! {
         }}
 
         fn get_cast_table(&self) -> &$crate::CastTable {
-            // TODO RPC: Is there a better way to check "is this a generic type"?
-            // See derive-deftly#37
-            ${if not(approx_equal({$tgens}, {})) {
+            ${if tgens {
                 // For generic types, we have a potentially unbounded number
                 // of CastTables: one for each instantiation of the type.
                 // Therefore we keep a mutable add-only HashMap of CastTables.
@@ -368,12 +366,21 @@ mod test {
         }
     }
 
+    #[derive(Deftly)]
+    #[derive_deftly(Object)]
+    struct Opossum {}
+
     #[test]
     fn standard_cast() {
         let bike = Bicycle {};
         let erased_bike: &dyn Object = &bike;
         let has_wheels: &dyn HasWheels = erased_bike.cast_to_trait().unwrap();
         assert_eq!(has_wheels.num_wheels(), 2);
+
+        let pogo = Opossum {};
+        let erased_pogo: &dyn Object = &pogo;
+        let has_wheels: Option<&dyn HasWheels> = erased_pogo.cast_to_trait();
+        assert!(has_wheels.is_none());
     }
 
     #[derive(Deftly)]
@@ -402,6 +409,9 @@ mod test {
         let arc_has_wheels: Arc<dyn HasWheels> =
             erased_arc_bytes.clone().cast_to_arc_trait().ok().unwrap();
         assert_eq!(arc_has_wheels.num_wheels(), 4);
+
+        let ref_has_wheels: &dyn HasWheels = erased_arc_bytes.cast_to_trait().unwrap();
+        assert_eq!(ref_has_wheels.num_wheels(), 4);
 
         trait SomethingElse {}
         let arc_something_else: Result<Arc<dyn SomethingElse>, _> =

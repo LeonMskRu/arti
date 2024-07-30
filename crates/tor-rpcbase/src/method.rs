@@ -11,14 +11,17 @@ use once_cell::sync::Lazy;
 /// Use [`derive_deftly(DynMethod)`](derive_deftly_template_DynMethod)
 /// for a template to declare one of these.
 ///
-/// # Note
+/// To be invoked from RPC, a method must additionally implement [`DeserMethod`].
 ///
-/// In order to comply with our spec, all Methods' data must be represented as a json
-/// object.
-//
-// TODO RPC: Possible issue here is that, if this trait is public, anybody outside
-// of Arti can use this trait to add new methods to the RPC engine. Should we
-// care?
+/// ## Note
+///
+/// As a consequence of this trait being public, any crate can define a method
+/// on an object, even if the method and object are defined in another crate:
+/// This should be okay, since:
+///
+/// * the crate should only have access to the public Rust methods of the object,
+///   which is presumably safe to call.
+/// * if you are linking a crate, you are already trusting that crate.
 pub trait DynMethod: std::fmt::Debug + Send + Downcast {}
 downcast_rs::impl_downcast!(DynMethod);
 
@@ -37,7 +40,7 @@ pub trait DeserMethod: DynMethod {
 /// A typed method, used to ensure that all implementations of a method have the
 /// same success and updates types.
 ///
-/// Prefer to implement this trait, rather than `DynMethod` or `DeserMethod`.
+/// Prefer to implement this trait or [`RpcMethod`], rather than `DynMethod` or `DeserMethod`.
 /// (Those traits represent a type-erased method, with statically-unknown `Output` and
 /// `Update` types.)
 ///
@@ -46,20 +49,35 @@ pub trait DeserMethod: DynMethod {
 /// must additionally implement `Serialize`, and its `Error` type must implement
 /// `Into<RpcError>`
 pub trait Method: DynMethod {
-    /// A type returned by this method on success.
+    /// A type returned by this method.
     type Output: Send + 'static;
     /// A type sent by this method on updates.
     ///
     /// If this method will never send updates, use the uninhabited
     /// [`NoUpdates`] type.
     type Update: Send + 'static;
-    /// A type returned by this method on failure.
-    //
-    // TODO: I'd like this to default to RpcError, but defaulting isn't implemented.
-    //
-    // TODO RPC: It would be beneficial to remove this type, possibly folding it into Output.
-    // See https://gitlab.torproject.org/tpo/core/arti/-/merge_requests/2152#note_3031297
-    type Error: Send + 'static;
+}
+
+/// A method that can be invoked from the RPC system.
+///
+/// Every RpcMethod automatically implements `Method`.
+pub trait RpcMethod: DeserMethod {
+    /// A type returned by this method _on success_.
+    ///
+    /// (The actual result type from the function implementing this method is `Result<Output,E>`,
+    /// where E implements `RpcError`.)
+    type Output: Send + serde::Serialize + 'static;
+
+    /// A type sent by this method on updates.
+    ///
+    /// If this method will never send updates, use the uninhabited
+    /// [`NoUpdates`] type.
+    type Update: Send + serde::Serialize + 'static;
+}
+
+impl<T: RpcMethod> Method for T {
+    type Output = Result<<T as RpcMethod>::Output, crate::RpcError>;
+    type Update = <T as RpcMethod>::Update;
 }
 
 /// An uninhabited type, used to indicate that a given method will never send
@@ -103,13 +121,12 @@ define_derive_deftly! {
 ///    accomplice: Option<rpc::ObjectId>,
 /// }
 ///
-/// impl rpc::Method for Castigate {
+/// impl rpc::RpcMethod for Castigate {
 ///     type Output = String;
 ///     type Update = rpc::NoUpdates;
-///     type Error = rpc::RpcError;
 /// }
 /// ```
-    pub DynMethod =
+    export DynMethod:
     const _: () = {
         impl $crate::DynMethod for $ttype {}
 
@@ -151,6 +168,7 @@ pub fn iter_method_names() -> impl Iterator<Item = &'static str> {
 /// Error representing an "invalid" method name.
 #[derive(Clone, Debug, thiserror::Error)]
 #[non_exhaustive]
+#[cfg_attr(test, derive(Eq, PartialEq))]
 pub enum InvalidMethodName {
     /// The method doesn't have a ':' to demarcate its namespace.
     #[error("Method has no namespace separator")]
@@ -217,4 +235,41 @@ pub fn check_method_names<'a>(
                 .map(|e| (name, e))
         })
         .collect()
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn valid_method_names() {
+        let namespaces: HashSet<_> = ["arti", "wombat"].into_iter().collect();
+
+        for name in [
+            "arti:clone",
+            "arti:clone7",
+            "arti:clone_now",
+            "wombat:knish",
+            "x-foo:bar",
+        ] {
+            assert!(is_valid_method_name(&namespaces, name).is_ok());
+        }
+    }
+
+    #[test]
+    fn invalid_method_names() {
+        let namespaces: HashSet<_> = ["arti", "wombat"].into_iter().collect();
+        use InvalidMethodName as E;
+
+        for (name, expect_err) in [
+            ("arti-foo:clone", E::UnrecognizedNamespace),
+            ("fred", E::NoNamespace),
+            ("arti:", E::BadMethodName),
+            ("arti:7clone", E::BadMethodName),
+            ("arti:CLONE", E::BadMethodName),
+            ("arti:clone-now", E::BadMethodName),
+        ] {
+            assert_eq!(is_valid_method_name(&namespaces, name), Err(expect_err));
+        }
+    }
 }

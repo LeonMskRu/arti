@@ -29,8 +29,9 @@ pub(crate) use std::{
 
 pub(crate) use futures::{
     channel::mpsc,
+    stream::FusedStream,
     task::{Spawn, SpawnError, SpawnExt as _},
-    FutureExt as _, StreamExt as _,
+    FutureExt as _, Stream, StreamExt as _,
 };
 
 pub(crate) use {
@@ -38,6 +39,7 @@ pub(crate) use {
     derive_deftly::{define_derive_deftly, Deftly},
     derive_more::{Deref, DerefMut, From, Into},
     educe::Educe,
+    pin_project::pin_project,
     serde::{Deserialize, Serialize},
     slotmap::SlotMap,
     static_assertions::assert_not_impl_any,
@@ -58,6 +60,7 @@ pub(crate) use crate::{
     drop_bomb::{DropBomb, DropBombCondition},
     drop_reentrancy,
     error::{Error, ReclaimCrashed, StartupError, TrackerCorrupted},
+    mtracker::Participation,
     refcount,
-    utils::{DefaultExtTake, Qty},
+    utils::{DefaultExtTake, NoopWaker, Qty},
 };

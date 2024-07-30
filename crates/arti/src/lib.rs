@@ -50,6 +50,8 @@ pub mod logging;
 #[cfg(not(feature = "onion-service-service"))]
 mod onion_proxy_disabled;
 
+mod subcommands;
+
 /// Helper:
 /// Declare a series of modules as public if experimental_api is set,
 /// and as non-public otherwise.
@@ -111,6 +113,13 @@ use clap::{value_parser, Arg, ArgAction, Command};
 #[allow(unused_imports)]
 use tracing::{error, info, warn};
 
+#[cfg(all(
+    feature = "onion-service-client",
+    feature = "experimental-api",
+    feature = "keymgr"
+))]
+use clap::Subcommand as _;
+
 /// Shorthand for a boxed and pinned Future.
 type PinnedFuture<T> = std::pin::Pin<Box<dyn futures::Future<Output = T>>>;
 
@@ -164,6 +173,8 @@ fn list_enabled_features() -> &'static [&'static str] {
 /// # Panics
 ///
 /// Currently, might panic if things go badly enough wrong
+///
+// TODO: move this to a new subcommands::proxy module.
 #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
 #[cfg_attr(docsrs, doc(cfg(feature = "experimental-api")))]
 async fn run<R: Runtime>(
@@ -192,7 +203,7 @@ async fn run<R: Runtime>(
                 .make_secure_dir(parent)?;
             // It's just a unix thing; if we leave this sitting around, binding to it won't
             // work right.  There is probably a better solution.
-            if path.exists() {
+            if path.try_exists()? {
                 std::fs::remove_file(&path)?;
             }
 
@@ -205,7 +216,7 @@ async fn run<R: Runtime>(
     let client_builder = TorClient::with_runtime(runtime.clone())
         .config(client_config)
         .bootstrap_behavior(OnDemand);
-    let client = client_builder.create_unbootstrapped()?;
+    let client = client_builder.create_unbootstrapped_async().await?;
 
     #[allow(unused_mut)]
     let mut reconfigurable_modules: Vec<Arc<dyn reload_cfg::ReconfigurableModule>> = vec![
@@ -321,6 +332,7 @@ async fn run<R: Runtime>(
 ///
 /// Currently, might panic if wrong arguments are specified.
 #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
+#[allow(clippy::cognitive_complexity)]
 fn main_main<I, T>(cli_args: I) -> Result<()>
 where
     I: IntoIterator<Item = T>,
@@ -455,6 +467,22 @@ where
         }
     }
 
+    cfg_if::cfg_if! {
+        if #[cfg(all(feature = "onion-service-client", feature = "experimental-api", feature = "keymgr"))] {
+            let clap_app = subcommands::hsc::HscSubcommands::augment_subcommands(clap_app);
+        }
+    }
+
+    // Relay subcommand
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "relay")] {
+            let clap_app = clap_app.subcommand(
+                Command::new("relay")
+                    .about("Run Arti in relay mode acting as a relay of the Tor network")
+            );
+        }
+    }
+
     // Tracing doesn't log anything when there is no subscriber set.  But we want to see
     // logging messages from config parsing etc.  We can't set the global default subscriber
     // because we can only set it once.  The other ways involve a closure.  So we have a
@@ -540,6 +568,7 @@ where
         }
     }
 
+    // Match the non optional subcommands that is the one that are always built in.
     if let Some(proxy_matches) = matches.subcommand_matches("proxy") {
         // Override configured SOCKS and DNS listen addresses from the command line.
         // This implies listening on localhost ports.
@@ -570,54 +599,38 @@ where
             config,
             client_config,
         ))?;
-        Ok(())
-    } else {
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "onion-service-service")] {
-                // TODO: this will soon grow more complex, so all of the code for handling the
-                // hss subcommand should probably be extracted in a separate module
-                if let Some(hss_matches) = matches.subcommand_matches("hss") {
-                    let nickname = hss_matches
-                        .get_one::<String>("nickname")
-                        .expect("non-optional nickname flag not specified?!");
+        return Ok(());
+    };
 
-                    if let Some(_onion_name_matches) = hss_matches.subcommand_matches("onion-name") {
-                        let nickname = tor_hsservice::HsNickname::try_from(nickname.clone())?;
-                        let Some(svc_config) = config.onion_services
-                            .into_iter()
-                            .find(|(n, _)| *n == nickname)
-                            .map(|(_, cfg)| cfg.svc_cfg) else {
-                            println!("Service {nickname} is not configured");
-                            return Ok(());
-                        };
-
-                        // TODO: PreferredRuntime was arbitrarily chosen and is entirely unused
-                        // (we have to specify a concrete type for the runtime when calling
-                        // TorClient::create_onion_service).
-                        //
-                        // Maybe this suggests TorClient is not the right place for
-                        // create_onion_service()
-                        let onion_svc = TorClient::<tor_rtcompat::PreferredRuntime>::create_onion_service(
-                            &client_config,
-                            svc_config
-                        )?;
-
-                        // TODO: instead of the printlns here, we should have a formatter type that
-                        // decides how to display the output
-                        if let Some(onion) = onion_svc.onion_name() {
-                            println!("{onion}");
-                        } else {
-                            println!("Service {nickname} does not exist, or does not have an K_hsid yet");
-                        }
-
-                        return Ok(());
-                    }
-                }
+    // Check for the optional "hss" subcommand.
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "onion-service-service")] {
+            if let Some(hss_matches) = matches.subcommand_matches("hss") {
+                return subcommands::hss::run(hss_matches, &config, &client_config);
             }
         }
-
-        panic!("Subcommand added to clap subcommand list, but not yet implemented")
     }
+
+    // Check for the optional "hsc" subcommand.
+    cfg_if::cfg_if! {
+        if #[cfg(all(feature = "onion-service-client", feature = "experimental-api", feature = "keymgr"))] {
+            if let Some(hsc_matches) = matches.subcommand_matches("hsc") {
+                return subcommands::hsc::run(runtime, hsc_matches, &client_config);
+            }
+        }
+    }
+
+    // Check for the optional "relay" subcommand.
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "relay")] {
+            if let Some(_relay_matches) = matches.subcommand_matches("relay") {
+                // TODO: Actually implement the launch of a relay.
+                todo!()
+            }
+        }
+    }
+
+    panic!("Subcommand added to clap subcommand list, but not yet implemented");
 }
 
 /// Main program, callable directly from a binary crate's `main`

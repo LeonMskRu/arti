@@ -49,7 +49,7 @@
 //!    It will then ask *every Participant* in that Account,
 //!    and every Participant in every Child of that Account,
 //!    to reclaim memory.
-//!     A Participant responds by freeing at least some memory,
+//!    A Participant responds by freeing at least some memory,
 //!    according to the reclamation request, and tells the Tracker when it has done so.
 //!
 //!  * **Reclamation strategy**:
@@ -61,7 +61,9 @@
 // !    a queue which responds to a reclamation request
 // !    by completely destroying itself and freeing all its data.
 //!
-//!  * **Approximate** (both in time and space):
+//!  * <div id="is-approximate">
+//!
+//!    **Approximate** (both in time and space):
 //!    The memory quota system is not completely precise.
 //!    Participants need not report their use precisely,
 //!    but the errors should be reasonably small, and bounded.
@@ -72,6 +74,8 @@
 //!    Reclamation is not immediate, and is dependent on task scheduling;
 //!    during memory pressure the quota may be exceeded;
 //!    new allocations are not prevented while attempts at reclamation are ongoing.
+//!
+//!    </div>
 //!
 // TODO we haven't implemented the queue wrapper yet
 // !  * **Queues**:
@@ -194,12 +198,15 @@ mod utils;
 // Modules with public items
 mod config;
 mod error;
+pub mod memory_cost;
 pub mod mtracker;
+mod stream_peek;
 
 //---------- re-exports at the crate root ----------
 
 pub use config::{Config, ConfigBuilder};
 pub use error::{Error, MemoryReclaimedError, StartupError};
+pub use memory_cost::HasMemoryCost;
 pub use mtracker::MemoryQuotaTracker;
 
 /// `Result` whose `Err` is [`tor_memtrack::Error`](Error)

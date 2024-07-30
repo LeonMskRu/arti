@@ -14,8 +14,8 @@
 //!
 //! To launch a channel:
 //!
-//!  * Create a TLS connection as an object that implements AsyncRead
-//!    + AsyncWrite, and pass it to a [ChannelBuilder].  This will
+//!  * Create a TLS connection as an object that implements AsyncRead +
+//!    AsyncWrite, and pass it to a [ChannelBuilder].  This will
 //!    yield an [handshake::OutboundClientHandshake] that represents
 //!    the state of the handshake.
 //!  * Call [handshake::OutboundClientHandshake::connect] on the result
@@ -68,7 +68,7 @@ pub use crate::channel::params::*;
 use crate::channel::reactor::{BoxedChannelSink, BoxedChannelStream, Reactor};
 pub use crate::channel::unique_id::UniqId;
 use crate::util::err::ChannelClosed;
-use crate::util::ts::OptTimestamp;
+use crate::util::ts::AtomicOptTimestamp;
 use crate::{circuit, ClockSkew};
 use crate::{Error, Result};
 use safelog::sensitive as sv;
@@ -227,7 +227,7 @@ pub(crate) struct ChannelDetails {
     ///
     /// Set by reactor when a circuit is added or removed.
     /// Read from `Channel::duration_unused`.
-    unused_since: OptTimestamp,
+    unused_since: AtomicOptTimestamp,
 }
 
 /// Mutable details (state) used by the `Channel` (frontend)
@@ -442,7 +442,7 @@ impl Channel {
         let (control_tx, control_rx) = mpsc::unbounded();
         let (cell_tx, cell_rx) = mpsc::channel(CHANNEL_BUFFER_SIZE);
         let closed = AtomicBool::new(false);
-        let unused_since = OptTimestamp::new();
+        let unused_since = AtomicOptTimestamp::new();
         unused_since.update();
 
         let mutable = MutableDetails::default();
@@ -771,7 +771,7 @@ impl HasRelayIds for Channel {
 /// Make some fake channel details (for testing only!)
 #[cfg(any(test, feature = "testing"))]
 fn fake_channel_details() -> Arc<ChannelDetails> {
-    let unused_since = OptTimestamp::new();
+    let unused_since = AtomicOptTimestamp::new();
     let (_tx, rx) = oneshot::channel(); // This will make rx trigger immediately.
 
     Arc::new(ChannelDetails {
