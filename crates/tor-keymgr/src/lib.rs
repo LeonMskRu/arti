@@ -76,7 +76,7 @@ pub use ssh::SshKeyAlgorithm;
 #[cfg_attr(docsrs, doc(cfg(feature = "keymgr")))]
 pub use {
     key_type::{KeyType, UnknownKeyTypeError},
-    keystore::arti::{ssh::UnparsedOpenSshKey, ArtiNativeKeystore},
+    keystore::arti::ArtiNativeKeystore,
     keystore::ephemeral::ArtiEphemeralKeystore,
     keystore::{EncodableKey, ErasedKey, Keygen, KeygenRng, Keystore, SshKeyData, ToEncodableKey},
     mgr::{KeyMgr, KeyMgrBuilder, KeyMgrBuilderError, KeystoreEntry},

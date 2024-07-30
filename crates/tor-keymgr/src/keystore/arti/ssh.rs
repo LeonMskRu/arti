@@ -89,7 +89,7 @@ impl UnparsedOpenSshKey {
     /// Create a new [`UnparsedOpenSshKey`].
     ///
     /// The contents of `inner` are erased on drop.
-    pub fn new(inner: String, path: PathBuf) -> Self {
+    pub(crate) fn new(inner: String, path: PathBuf) -> Self {
         Self {
             inner: Zeroizing::new(inner),
             path,
@@ -100,7 +100,7 @@ impl UnparsedOpenSshKey {
     /// type-erased value.
     ///
     /// The caller is expected to downcast the value returned to a concrete type.
-    pub fn parse_ssh_format_erased(self, key_type: &KeyType) -> Result<ErasedKey> {
+    pub(crate) fn parse_ssh_format_erased(self, key_type: &KeyType) -> Result<ErasedKey> {
         match key_type {
             KeyType::Ed25519Keypair
             | KeyType::X25519StaticKeypair
