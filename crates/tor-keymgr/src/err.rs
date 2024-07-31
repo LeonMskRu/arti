@@ -7,7 +7,6 @@ use tor_persist::slug::BadSlug;
 
 use std::error::Error as StdError;
 use std::fmt;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::ssh::SshKeyAlgorithm;
@@ -35,7 +34,7 @@ pub enum Error {
     /// but mustn't be relied on for correctness.
     #[error("Key already exists")]
     KeyAlreadyExists,
-    
+
     /// An error caused by an invalid or unsupported OpenSSH key.
     #[error("{0}")]
     SshKey(#[from] SshKeyError),
@@ -102,8 +101,6 @@ pub enum SshKeyError {
     /// Failed to parse an OpenSSH key
     #[error("Failed to parse OpenSSH with type {key_type:?}")]
     SshKeyParse {
-        /// The path of the malformed key.
-        path: PathBuf,
         /// The type of key we were trying to fetch.
         key_type: KeyType,
         /// The underlying error.
@@ -114,14 +111,12 @@ pub enum SshKeyError {
     /// The OpenSSH key we retrieved is of the wrong type.
     #[error("Unexpected OpenSSH key type: wanted {wanted_key_algo}, found {found_key_algo}")]
     UnexpectedSshKeyType {
-        /// The path of the malformed key.
-        path: PathBuf,
         /// The algorithm we expected the key to use.
         wanted_key_algo: SshKeyAlgorithm,
         /// The algorithm of the key we got.
         found_key_algo: SshKeyAlgorithm,
     },
-    
+
     /// Encountered an encrypted key.
     #[error("Encrypted keys are not supported yet")]
     Encrypted {
@@ -141,7 +136,9 @@ impl HasKind for SshKeyError {
 
         match self {
             SshKeyError::UnknownKeyType(_) => EK::KeystoreAccessFailed,
-            SshKeyError::SshKeyParse { .. } | SshKeyError::UnexpectedSshKeyType { .. } => EK::KeystoreCorrupted,
+            SshKeyError::SshKeyParse { .. } | SshKeyError::UnexpectedSshKeyType { .. } => {
+                EK::KeystoreCorrupted
+            }
             SshKeyError::UnsupportedKeyAlgorithm(_) => EK::BadApiUsage,
             SshKeyError::Encrypted { .. } => EK::Internal,
         }

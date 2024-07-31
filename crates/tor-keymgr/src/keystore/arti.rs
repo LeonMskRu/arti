@@ -11,9 +11,9 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use crate::keystore::{EncodableKey, ErasedKey, KeySpecifier, Keystore};
+use crate::ssh::unparsed_key::UnparsedOpenSshKey;
 use crate::{arti_path, ArtiPath, ArtiPathUnavailableError, KeyPath, KeyType, KeystoreId, Result};
 use err::{ArtiNativeKeystoreError, FilesystemAction};
-use crate::ssh::unparsed_key::UnparsedOpenSshKey;
 
 use fs_mistrust::{CheckedDir, Mistrust};
 use itertools::Itertools;

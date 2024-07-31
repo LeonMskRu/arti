@@ -28,39 +28,44 @@ pub(crate) struct UnparsedOpenSshKey {
 /// Parse an OpenSSH key, returning its corresponding [`SshKeyData`].
 macro_rules! parse_openssh {
     (PRIVATE $key:expr, $key_type:expr) => {{
-        SshKeyData::try_from_keypair_data(parse_openssh!(
-            $key,
-            $key_type,
-            ssh_key::private::PrivateKey::from_openssh
-        ).key_data().clone())?
+        SshKeyData::try_from_keypair_data(
+            parse_openssh!($key, $key_type, ssh_key::private::PrivateKey::from_openssh)
+                .key_data()
+                .clone(),
+        )?
     }};
 
     (PUBLIC $key:expr, $key_type:expr) => {{
-        SshKeyData::try_from_key_data(parse_openssh!(
-            $key,
-            $key_type,
-            ssh_key::public::PublicKey::from_openssh
-        ).key_data().clone())?
+        SshKeyData::try_from_key_data(
+            parse_openssh!($key, $key_type, ssh_key::public::PublicKey::from_openssh)
+                .key_data()
+                .clone(),
+        )?
     }};
 
     ($key:expr, $key_type:expr, $parse_fn:path) => {{
         let key = match $parse_fn(&*$key.inner) {
             Ok(key) => key,
-            Err(e) => return Err($crate::err::Error::SshKey(SshKeyError::SshKeyParse {
-                path: $key.path,
-                key_type: $key_type.clone().clone(),
-                err: e.into(),
-            })),
+            Err(e) => {
+                return Err($crate::err::Error::SshKey(SshKeyError::SshKeyParse {
+                    path: $key.path,
+                    key_type: $key_type.clone().clone(),
+                    err: e.into(),
+                }))
+            }
         };
 
         let wanted_key_algo = ssh_algorithm($key_type)?;
 
         if SshKeyAlgorithm::from(key.algorithm()) != wanted_key_algo {
-            return Err($crate::err::Error::SshKey(SshKeyError::UnexpectedSshKeyType {
-                path: $key.path,
-                wanted_key_algo,
-                found_key_algo: key.algorithm().into(),
-            }.into()));
+            return Err($crate::err::Error::SshKey(
+                SshKeyError::UnexpectedSshKeyType {
+                    path: $key.path,
+                    wanted_key_algo,
+                    found_key_algo: key.algorithm().into(),
+                }
+                .into(),
+            ));
         }
 
         key
@@ -73,12 +78,12 @@ fn ssh_algorithm(key_type: &KeyType) -> Result<SshKeyAlgorithm, SshKeyError> {
         KeyType::Ed25519Keypair | KeyType::Ed25519PublicKey => Ok(SshKeyAlgorithm::Ed25519),
         KeyType::X25519StaticKeypair | KeyType::X25519PublicKey => Ok(SshKeyAlgorithm::X25519),
         KeyType::Ed25519ExpandedKeypair => Ok(SshKeyAlgorithm::Ed25519Expanded),
-        KeyType::Unknown { arti_extension } => Err(SshKeyError::UnknownKeyType(
-            UnknownKeyTypeError {
+        KeyType::Unknown { arti_extension } => {
+            Err(SshKeyError::UnknownKeyType(UnknownKeyTypeError {
                 arti_extension: arti_extension.clone(),
-            },
-        )
-        .into()),
+            })
+            .into())
+        }
     }
 }
 
@@ -107,12 +112,12 @@ impl UnparsedOpenSshKey {
             KeyType::Ed25519PublicKey | KeyType::X25519PublicKey => {
                 parse_openssh!(PUBLIC self, key_type).into_erased()
             }
-            KeyType::Unknown { arti_extension } => Err(SshKeyError::UnknownKeyType(
-                UnknownKeyTypeError {
+            KeyType::Unknown { arti_extension } => {
+                Err(SshKeyError::UnknownKeyType(UnknownKeyTypeError {
                     arti_extension: arti_extension.clone(),
-                },
-            )
-            .into()),
+                })
+                .into())
+            }
         }
     }
 }
