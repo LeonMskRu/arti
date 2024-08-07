@@ -1,6 +1,7 @@
 //! Shared OpenSSH helpers.
 
 use ssh_key::Algorithm;
+pub(crate) mod unparsed_key;
 
 /// The algorithm string for x25519 SSH keys.
 ///

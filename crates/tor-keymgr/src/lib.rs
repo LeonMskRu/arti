@@ -63,7 +63,7 @@ mod mgr;
 mod dummy;
 
 pub use arti_path::{ArtiPath, DENOTATOR_SEP};
-pub use err::{ArtiPathSyntaxError, Error, KeystoreCorruptionError, KeystoreError};
+pub use err::{ArtiPathSyntaxError, Error, KeystoreCorruptionError, KeystoreError, SshKeyError};
 pub use key_specifier::{
     ArtiPathUnavailableError, CTorPath, InvalidKeyPathComponentValue, KeyPath, KeyPathError,
     KeyPathInfo, KeyPathInfoBuilder, KeyPathInfoExtractor, KeyPathPattern, KeyPathRange,

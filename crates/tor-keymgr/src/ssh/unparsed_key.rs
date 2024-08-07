@@ -3,9 +3,8 @@
 // TODO #902: OpenSSH keys can have passphrases. While the current implementation isn't able to
 // handle such keys, we will eventually need to support them (this will be a breaking API change).
 
-use crate::keystore::arti::err::ArtiNativeKeystoreError;
 use crate::ssh::SshKeyAlgorithm;
-use crate::{ErasedKey, KeyType, Result, SshKeyData};
+use crate::{ErasedKey, KeyType, SshKeyData, SshKeyError};
 
 use zeroize::Zeroizing;
 
@@ -19,7 +18,7 @@ use crate::UnknownKeyTypeError;
 /// value is unchecked/unvalidated, and might not actually be a valid OpenSSH key.
 ///
 /// The inner value is zeroed on drop.
-pub(super) struct UnparsedOpenSshKey {
+pub(crate) struct UnparsedOpenSshKey {
     /// The contents of an OpenSSH key file.
     inner: Zeroizing<String>,
     /// The path of the file (for error reporting).
@@ -29,41 +28,44 @@ pub(super) struct UnparsedOpenSshKey {
 /// Parse an OpenSSH key, returning its corresponding [`SshKeyData`].
 macro_rules! parse_openssh {
     (PRIVATE $key:expr, $key_type:expr) => {{
-        SshKeyData::try_from_keypair_data(parse_openssh!(
-            $key,
-            $key_type,
-            ssh_key::private::PrivateKey::from_openssh
-        ).key_data().clone())?
+        SshKeyData::try_from_keypair_data(
+            parse_openssh!($key, $key_type, ssh_key::private::PrivateKey::from_openssh)
+                .key_data()
+                .clone(),
+        )?
     }};
 
     (PUBLIC $key:expr, $key_type:expr) => {{
-        SshKeyData::try_from_key_data(parse_openssh!(
-            $key,
-            $key_type,
-            ssh_key::public::PublicKey::from_openssh
-        ).key_data().clone())?
+        SshKeyData::try_from_key_data(
+            parse_openssh!($key, $key_type, ssh_key::public::PublicKey::from_openssh)
+                .key_data()
+                .clone(),
+        )?
     }};
 
     ($key:expr, $key_type:expr, $parse_fn:path) => {{
-        let key = $parse_fn(&*$key.inner).map_err(|e| {
-            ArtiNativeKeystoreError::SshKeyParse {
-                // TODO: rust thinks this clone is necessary because key.path is also used below (but
-                // if we get to this point, we're going to return an error and never reach the other
-                // error handling branches where we use key.path).
-                path: $key.path.clone(),
-                key_type: $key_type.clone().clone(),
-                err: e.into(),
+        let key = match $parse_fn(&*$key.inner) {
+            Ok(key) => key,
+            Err(e) => {
+                return Err($crate::err::Error::SshKey(SshKeyError::SshKeyParse {
+                    path: $key.path,
+                    key_type: $key_type.clone().clone(),
+                    err: e.into(),
+                }))
             }
-        })?;
+        };
 
         let wanted_key_algo = ssh_algorithm($key_type)?;
 
         if SshKeyAlgorithm::from(key.algorithm()) != wanted_key_algo {
-            return Err(ArtiNativeKeystoreError::UnexpectedSshKeyType {
-                path: $key.path,
-                wanted_key_algo,
-                found_key_algo: key.algorithm().into(),
-            }.into());
+            return Err($crate::err::Error::SshKey(
+                SshKeyError::UnexpectedSshKeyType {
+                    path: $key.path,
+                    wanted_key_algo,
+                    found_key_algo: key.algorithm().into(),
+                }
+                .into(),
+            ));
         }
 
         key
@@ -71,17 +73,17 @@ macro_rules! parse_openssh {
 }
 
 /// Get the algorithm of this key type.
-fn ssh_algorithm(key_type: &KeyType) -> Result<SshKeyAlgorithm> {
+fn ssh_algorithm(key_type: &KeyType) -> Result<SshKeyAlgorithm, SshKeyError> {
     match key_type {
         KeyType::Ed25519Keypair | KeyType::Ed25519PublicKey => Ok(SshKeyAlgorithm::Ed25519),
         KeyType::X25519StaticKeypair | KeyType::X25519PublicKey => Ok(SshKeyAlgorithm::X25519),
         KeyType::Ed25519ExpandedKeypair => Ok(SshKeyAlgorithm::Ed25519Expanded),
-        KeyType::Unknown { arti_extension } => Err(ArtiNativeKeystoreError::UnknownKeyType(
-            UnknownKeyTypeError {
+        KeyType::Unknown { arti_extension } => {
+            Err(SshKeyError::UnknownKeyType(UnknownKeyTypeError {
                 arti_extension: arti_extension.clone(),
-            },
-        )
-        .into()),
+            })
+            .into())
+        }
     }
 }
 
@@ -100,7 +102,7 @@ impl UnparsedOpenSshKey {
     /// type-erased value.
     ///
     /// The caller is expected to downcast the value returned to a concrete type.
-    pub(crate) fn parse_ssh_format_erased(self, key_type: &KeyType) -> Result<ErasedKey> {
+    pub(crate) fn parse_ssh_format_erased(self, key_type: &KeyType) -> crate::Result<ErasedKey> {
         match key_type {
             KeyType::Ed25519Keypair
             | KeyType::X25519StaticKeypair
@@ -110,12 +112,12 @@ impl UnparsedOpenSshKey {
             KeyType::Ed25519PublicKey | KeyType::X25519PublicKey => {
                 parse_openssh!(PUBLIC self, key_type).into_erased()
             }
-            KeyType::Unknown { arti_extension } => Err(ArtiNativeKeystoreError::UnknownKeyType(
-                UnknownKeyTypeError {
+            KeyType::Unknown { arti_extension } => {
+                Err(SshKeyError::UnknownKeyType(UnknownKeyTypeError {
                     arti_extension: arti_extension.clone(),
-                },
-            )
-            .into()),
+                })
+                .into())
+            }
         }
     }
 }
