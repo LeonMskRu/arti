@@ -6258,6 +6258,7 @@ name = "tor-hsservice"
 version = "0.30.0"
 dependencies = [
  "amplify",
+ "arrayvec",
  "async-trait",
  "base64ct",
  "cfg-if",
@@ -6294,6 +6295,7 @@ dependencies = [
  "tor-basic-utils",
  "tor-bytes",
  "tor-cell",
+ "tor-checkable",
  "tor-circmgr",
  "tor-config",
  "tor-config-path",
