@@ -47,6 +47,7 @@ derive_more = { version = "2.0.1", features = ["full"] }
 digest = "0.10.0"
 equix = { path = "../equix", version = "0.2.3", optional = true }
 humantime = "2"
+hex = "0.4"
 itertools = "0.14.0"
 paste = "1"
 rand = "0.9.1"
@@ -65,7 +66,6 @@ void = "1"
 zeroize = { version = "1", optional = true }
 
 [dev-dependencies]
-hex = "0.4"
 hex-literal = "0.4"
 tor-basic-utils = { version = "0.30.0", path = "../tor-basic-utils" }
 
