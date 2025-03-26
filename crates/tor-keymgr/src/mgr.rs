@@ -671,6 +671,19 @@ mod tests {
     use tor_llcrypto::pk::ed25519::{self, Ed25519PublicKey as _};
     use tor_llcrypto::rng::FakeEntropicRng;
 
+    /// Metadata structure for tracking key operations in tests.
+    #[derive(Clone, Debug, PartialEq)]
+    struct KeyMetadata {
+        /// The identifier for the item (e.g., "coot", "moorhen").
+        item_id: String,
+        /// The keystore from which the item was retrieved.
+        ///
+        /// Set by `Keystore::get`.
+        retrieved_from: Option<KeystoreId>,
+        /// Whether the item was generated via `Keygen::generate`.
+        is_generated: bool,
+    }
+
     /// Metadata structure for tracking item operations in tests.
     #[derive(Clone, Debug, PartialEq)]
     struct ItemMetadata {
@@ -682,6 +695,27 @@ mod tests {
         retrieved_from: Option<KeystoreId>,
         /// Whether the item was generated via `Keygen::generate`.
         is_generated: bool,
+    }
+
+    // Add conversions to facilitate transition in future steps
+    impl From<ItemMetadata> for KeyMetadata {
+        fn from(meta: ItemMetadata) -> Self {
+            KeyMetadata {
+                item_id: meta.item_id,
+                retrieved_from: meta.retrieved_from,
+                is_generated: meta.is_generated,
+            }
+        }
+    }
+
+    impl From<KeyMetadata> for ItemMetadata {
+        fn from(meta: KeyMetadata) -> Self {
+            ItemMetadata {
+                item_id: meta.item_id,
+                retrieved_from: meta.retrieved_from,
+                is_generated: meta.is_generated,
+            }
+        }
     }
 
     /// The type of "key" stored in the test key stores.
