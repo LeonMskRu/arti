@@ -695,10 +695,12 @@ mod tests {
         ///
         /// Set by `Keystore::get`.
         retrieved_from: Option<KeystoreId>,
+        /// Whether the certificate was generated via `Keygen::generate`.
+        is_generated: bool,
     }
 
     /// Metadata structure for tracking item operations in tests.
-    #[derive(Clone, Debug, PartialEq)]
+    #[derive(Clone, Debug, PartialEq, derive_more::From)]
     enum ItemMetadata {
         /// Metadata about a key.
         Key(KeyMetadata),
@@ -706,22 +708,39 @@ mod tests {
         Cert(CertMetadata),
     }
 
-    // These methods are planned for future use when implementing certificate tests
-    #[allow(dead_code)]
     impl ItemMetadata {
-        /// Extracts key metadata if this is a Key variant.
-        fn into_key(self) -> Option<KeyMetadata> {
+        /// Get the item ID.
+        ///
+        /// For keys, this returns the key's ID.
+        /// For certificates, this returns a formatted string identifying the subject key.
+        fn item_id(&self) -> &str {
             match self {
-                ItemMetadata::Key(meta) => Some(meta),
-                _ => None,
+                ItemMetadata::Key(k) => &k.item_id,
+                ItemMetadata::Cert(c) => &c.subject_key_id,
             }
         }
 
-        /// Extracts certificate metadata if this is a Cert variant.
-        fn into_cert(self) -> Option<CertMetadata> {
+        /// Get retrieved_from.
+        fn retrieved_from(&self) -> Option<&KeystoreId> {
             match self {
-                ItemMetadata::Cert(meta) => Some(meta),
-                _ => None,
+                ItemMetadata::Key(k) => k.retrieved_from.as_ref(),
+                ItemMetadata::Cert(c) => c.retrieved_from.as_ref(),
+            }
+        }
+
+        /// Get is_generated.
+        fn is_generated(&self) -> bool {
+            match self {
+                ItemMetadata::Key(k) => k.is_generated,
+                ItemMetadata::Cert(c) => c.is_generated,
+            }
+        }
+
+        /// Set the retrieved_from field to the specified keystore ID.
+        fn set_retrieved_from(&mut self, id: KeystoreId) {
+            match self {
+                ItemMetadata::Key(meta) => meta.retrieved_from = Some(id),
+                ItemMetadata::Cert(meta) => meta.retrieved_from = Some(id),
             }
         }
 
@@ -739,43 +758,6 @@ mod tests {
                 ItemMetadata::Cert(meta) => Some(meta),
                 _ => None,
             }
-        }
-    }
-
-    // For backward compatibility with existing code in tests
-    impl ItemMetadata {
-        /// Get the item ID.
-        ///
-        /// For keys, this returns the key's ID.
-        /// For certificates, this returns a formatted string identifying the subject key.
-        fn item_id(&self) -> &str {
-            match self {
-                ItemMetadata::Key(k) => &k.item_id,
-                ItemMetadata::Cert(_) => "certificate",
-            }
-        }
-
-        /// Get retrieved_from.
-        fn retrieved_from(&self) -> Option<&KeystoreId> {
-            match self {
-                ItemMetadata::Key(k) => k.retrieved_from.as_ref(),
-                ItemMetadata::Cert(c) => c.retrieved_from.as_ref(),
-            }
-        }
-
-        /// Get is_generated.
-        fn is_generated(&self) -> bool {
-            match self {
-                ItemMetadata::Key(k) => k.is_generated,
-                ItemMetadata::Cert(_) => false, // Certificates are never directly generated
-            }
-        }
-    }
-
-    // Add conversion to facilitate transition from old code
-    impl From<KeyMetadata> for ItemMetadata {
-        fn from(meta: KeyMetadata) -> Self {
-            ItemMetadata::Key(meta)
         }
     }
 
@@ -967,14 +949,7 @@ mod tests {
                         .get(&(key_spec.arti_path().unwrap(), item_type.clone()))
                         .map(|k| {
                             let mut k = k.clone();
-                            match &mut k.meta {
-                                ItemMetadata::Key(meta) => {
-                                    meta.retrieved_from = Some(self.id().clone());
-                                }
-                                ItemMetadata::Cert(meta) => {
-                                    meta.retrieved_from = Some(self.id().clone());
-                                }
-                            }
+                            k.meta.set_retrieved_from(self.id().clone());
                             Box::new(k) as Box<dyn ItemType>
                         }))
                 }
@@ -1512,6 +1487,7 @@ mod tests {
                     subject_key_id: subject_id,
                     signing_key_id: signing_id,
                     retrieved_from: None,
+                    is_generated: false,
                 });
 
                 // Note: this is not really a cert for `subject_key` signed with the `signed_with`
