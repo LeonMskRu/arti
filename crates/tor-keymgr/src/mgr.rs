@@ -695,7 +695,8 @@ mod tests {
         ///
         /// Set by `Keystore::get`.
         retrieved_from: Option<KeystoreId>,
-        /// Whether the certificate was generated via `Keygen::generate`.
+        /// Whether the certificate was freshly generated (i.e. returned from the "or generate"
+        /// branch of `get_or_generate()`) or retrieved from a keystore.
         is_generated: bool,
     }
 
@@ -1487,7 +1488,7 @@ mod tests {
                     subject_key_id: subject_id,
                     signing_key_id: signing_id,
                     retrieved_from: None,
-                    is_generated: false,
+                    is_generated: true,
                 });
 
                 // Note: this is not really a cert for `subject_key` signed with the `signed_with`
@@ -1552,6 +1553,7 @@ mod tests {
                     cert.0.meta.as_cert().unwrap().signing_key_id,
                     "generated_test_key"
                 );
+                assert_eq!(cert.0.meta.is_generated(), true);
             }
         }}
     }
