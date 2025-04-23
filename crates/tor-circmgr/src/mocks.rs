@@ -14,6 +14,7 @@ use std::sync::{self, Arc};
 use std::time::Duration;
 
 use crate::isolation::test::IsolationTokenEq;
+use crate::timeouts::pareto::{MsecDuration, ParetoTimeoutState};
 use crate::usage::ExitPolicy;
 use crate::{StreamIsolation, TargetPorts};
 use std::sync::atomic::{self, AtomicUsize};
@@ -182,6 +183,16 @@ impl<RT: Runtime> AbstractCircBuilder<RT> for FakeBuilder<RT> {
 
     fn learning_timeouts(&self) -> bool {
         false
+    }
+
+    fn get_state(&self) -> timeouts::pareto::ParetoTimeoutState {
+        let cur_timeout = MsecDuration(0);
+        ParetoTimeoutState {
+            version: 1,
+            histogram: vec![(cur_timeout, 0)],
+            current_timeout: Some(cur_timeout),
+            unknown_fields: Default::default(),
+        }
     }
 
     fn save_state(&self) -> Result<bool> {

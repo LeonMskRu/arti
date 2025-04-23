@@ -37,7 +37,7 @@ const BUCKET_WIDTH_MSEC: u32 = 10;
 /// milliseconds (about 49 days).
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(transparent)]
-struct MsecDuration(u32);
+pub(crate) struct MsecDuration(pub(crate) u32);
 
 impl MsecDuration {
     /// Convert a Duration into a MsecDuration, saturating
@@ -472,21 +472,21 @@ impl Default for ParetoTimeoutEstimator {
 }
 
 /// An object used to serialize our timeout history for persistent state.
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub(crate) struct ParetoTimeoutState {
     /// A version field used to help encoding and decoding.
     #[allow(dead_code)]
-    version: usize,
+    pub(crate) version: usize,
     /// A record of observed timeouts, as returned by `sparse_histogram()`.
-    histogram: Vec<(MsecDuration, u16)>,
+    pub(crate) histogram: Vec<(MsecDuration, u16)>,
     /// The current timeout estimate: kept for reference.
-    current_timeout: Option<MsecDuration>,
+    pub(crate) current_timeout: Option<MsecDuration>,
 
     /// Fields from the state file that was used to make this `ParetoTimeoutState` that
     /// this version of Arti doesn't understand.
     #[serde(flatten)]
-    unknown_fields: HashMap<String, JsonValue>,
+    pub(crate) unknown_fields: HashMap<String, JsonValue>,
 }
 
 impl ParetoTimeoutState {

@@ -1,7 +1,7 @@
 //! Facilities to build circuits directly, instead of via a circuit manager.
 
 use crate::path::{OwnedPath, TorPath};
-use crate::timeouts::{self, Action};
+use crate::timeouts::{self, pareto::ParetoTimeoutState, Action};
 use crate::{Error, Result};
 use async_trait::async_trait;
 use futures::task::SpawnExt;
@@ -417,6 +417,11 @@ impl<R: Runtime> CircuitBuilder<R> {
         self.builder.timeouts.save_state(&self.storage)?;
         self.guardmgr.store_persistent_state()?;
         Ok(true)
+    }
+
+    /// Get the state to the state manager if we own the lock.
+    pub(crate) fn get_state(&self) -> ParetoTimeoutState {
+        self.builder.timeouts.get_state()
     }
 
     /// Replace our state with a new owning state, assuming we have

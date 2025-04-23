@@ -777,6 +777,7 @@ impl<B: AbstractCircBuilder<R> + 'static, R: Runtime> CircMgrInner<B, R> {
     ) where
         S: StateMgr + std::marker::Send,
     {
+        let mut state: Option<timeouts::pareto::ParetoTimeoutState> = None;
         while sched.next().await.is_some() {
             if let Some(circmgr) = Weak::upgrade(&circmgr) {
                 use tor_persist::LockStatus::*;
@@ -794,6 +795,13 @@ impl<B: AbstractCircBuilder<R> + 'static, R: Runtime> CircMgrInner<B, R> {
                         }
                     }
                     Ok(AlreadyHeld) => {
+                        if state.is_some()
+                            && state.expect("Unable to get circmgr state") == circmgr.get_state()
+                        {
+                            break;
+                        } else {
+                            state = Some(circmgr.get_state());
+                        }
                         if let Err(e) = circmgr.store_persistent_state() {
                             error_report!(e, "Unable to flush circmgr state");
                             break;
@@ -816,7 +824,7 @@ impl<B: AbstractCircBuilder<R> + 'static, R: Runtime> CircMgrInner<B, R> {
             // we should be updating more frequently when the data is volatile
             // or has important info to save, and not at all when there are no
             // changes.
-            sched.fire_in(Duration::from_secs(60));
+            sched.fire_in(Duration::from_secs(15));
         }
 
         debug!("State update task exiting (potentially due to handle drop).");
@@ -999,6 +1007,11 @@ impl<B: AbstractCircBuilder<R> + 'static, R: Runtime> CircMgrInner<B, R> {
     /// Internal implementation for [`CircMgr::builder`].
     pub(crate) fn builder(&self) -> &B {
         self.mgr.peek_builder()
+    }
+
+    /// Get the current state.
+    pub(crate) fn get_state(&self) -> timeouts::pareto::ParetoTimeoutState {
+        self.mgr.peek_builder().get_state()
     }
 
     /// Flush state to the state manager, if there is any unsaved state and
