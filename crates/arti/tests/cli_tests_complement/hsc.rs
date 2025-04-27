@@ -1,4 +1,4 @@
-use crate::auxiliaries::command;
+use crate::auxiliaries::{command, ADDR_SIZE};
 
 #[test]
 fn gen_key() {
@@ -8,6 +8,8 @@ fn gen_key() {
     let o = format!(r#"storage.state_dir="{}""#, dir_path.to_str().unwrap());
     let mut cmd = command();
     cmd.args([
+        "-c",
+        "./tests/testcases/hsc/conf/hsc.toml",
         "-o",
         &o,
         "hsc",
@@ -25,7 +27,10 @@ fn gen_key() {
         .unwrap()
         .contains("descriptor:x25519:"));
 
-    let keystore_path = dir_path.join("keystore").join("client").join(&addr[..56]);
+    let keystore_path = dir_path
+        .join("keystore")
+        .join("client")
+        .join(&addr[..ADDR_SIZE]);
     // Assert new private key has been generated
     assert_eq!(
         keystore_path
@@ -47,6 +52,8 @@ fn generate_then_rotate() {
     let o = format!(r#"storage.state_dir="{}""#, dir_path.to_str().unwrap());
     let mut cmd = command();
     cmd.args([
+        "-c",
+        "./tests/testcases/hsc/conf/hsc.toml",
         "-o",
         &o,
         "hsc",
@@ -74,7 +81,10 @@ fn generate_then_rotate() {
     // Assert key has been rotated
     assert_ne!(descriptor, rotated_descriptor);
 
-    let keystore_path = dir_path.join("keystore").join("client").join(&addr[..56]);
+    let keystore_path = dir_path
+        .join("keystore")
+        .join("client")
+        .join(&addr[..ADDR_SIZE]);
     // Assert new private key has been generated
     assert_eq!(
         keystore_path
@@ -96,6 +106,8 @@ fn generate_then_remove() {
     let o = format!(r#"storage.state_dir="{}""#, dir_path.to_str().unwrap());
     let mut cmd = command();
     cmd.args([
+        "-c",
+        "./tests/testcases/hsc/conf/hsc.toml",
         "-o",
         &o,
         "hsc",
@@ -118,7 +130,10 @@ fn generate_then_remove() {
     cmd.write_stdin(addr);
     cmd.assert().success();
 
-    let keystore_path = dir_path.join("keystore").join("client").join(&addr[..56]);
+    let keystore_path = dir_path
+        .join("keystore")
+        .join("client")
+        .join(&addr[..ADDR_SIZE]);
     let entries = keystore_path.read_dir().unwrap().flatten();
     // Assert key has been removed
     assert_eq!(entries.count(), 0);
