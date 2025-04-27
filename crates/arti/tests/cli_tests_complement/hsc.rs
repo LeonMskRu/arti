@@ -1,4 +1,4 @@
-use crate::auxiliaries::{command, ADDR_SIZE};
+use crate::auxiliaries::{command, ADDR_SIZE, CFG_PATH};
 
 #[test]
 fn gen_key() {
@@ -9,7 +9,7 @@ fn gen_key() {
     let mut cmd = command();
     cmd.args([
         "-c",
-        "./tests/testcases/hsc/conf/hsc.toml",
+        CFG_PATH,
         "-o",
         &o,
         "hsc",
@@ -53,7 +53,7 @@ fn generate_then_rotate() {
     let mut cmd = command();
     cmd.args([
         "-c",
-        "./tests/testcases/hsc/conf/hsc.toml",
+        CFG_PATH,
         "-o",
         &o,
         "hsc",
@@ -71,7 +71,9 @@ fn generate_then_rotate() {
     assert!(descriptor.contains("descriptor:x25519:"));
 
     let mut cmd = command();
-    cmd.args(["-o", &o, "hsc", "key", "rotate", "--batch", "--output", "-"]);
+    cmd.args([
+        "-c", CFG_PATH, "-o", &o, "hsc", "key", "rotate", "--batch", "--output", "-",
+    ]);
     cmd.write_stdin(addr);
     let output = cmd.output().unwrap();
     assert!(output.status.success());
@@ -107,7 +109,7 @@ fn generate_then_remove() {
     let mut cmd = command();
     cmd.args([
         "-c",
-        "./tests/testcases/hsc/conf/hsc.toml",
+        CFG_PATH,
         "-o",
         &o,
         "hsc",
@@ -126,7 +128,7 @@ fn generate_then_remove() {
         .contains("descriptor:x25519:"));
 
     let mut cmd = command();
-    cmd.args(["-o", &o, "hsc", "key", "remove", "--batch"]);
+    cmd.args(["-c", CFG_PATH, "-o", &o, "hsc", "key", "remove", "--batch"]);
     cmd.write_stdin(addr);
     cmd.assert().success();
 
