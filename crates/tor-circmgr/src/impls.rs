@@ -185,6 +185,10 @@ impl<R: Runtime> crate::mgr::AbstractCircBuilder<R> for crate::build::CircuitBui
         CircuitBuilder::learning_timeouts(self)
     }
 
+    fn get_state(&self) -> timeouts::pareto::ParetoTimeoutState {
+        CircuitBuilder::get_state(self)
+    }
+
     fn save_state(&self) -> Result<bool> {
         CircuitBuilder::save_state(self)
     }

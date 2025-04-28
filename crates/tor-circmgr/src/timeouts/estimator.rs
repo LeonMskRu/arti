@@ -125,6 +125,12 @@ impl Estimator {
         }
         Ok(())
     }
+
+    /// Get the state associated with this timeout estimator as a variable.
+    pub(crate) fn get_state(&self) -> ParetoTimeoutState {
+        let mut inner = self.inner.lock().expect("Timeout estimator lock poisoned.");
+        inner.build_state().expect("Unable to load timeout state")
+    }
 }
 
 /// Try to construct a new boxed TimeoutEstimator based on the contents of
@@ -138,7 +144,7 @@ fn estimator_from_storage(
         Ok(Some(v)) => v,
         Ok(None) => ParetoTimeoutState::default(),
         Err(e) => {
-            warn_report!(e, "Unable to load timeout state");
+            warn_report!(e, "Unable to load circmgr state");
             return (true, Box::new(ReadonlyTimeoutEstimator::new()));
         }
     };

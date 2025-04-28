@@ -227,6 +227,9 @@ pub(crate) trait AbstractCircBuilder<R: Runtime>: Send + Sync {
     /// timeouts by building testing circuits.
     fn learning_timeouts(&self) -> bool;
 
+    /// Get the state to the state manager if we own the lock.
+    fn get_state(&self) -> timeouts::pareto::ParetoTimeoutState;
+
     /// Flush state to the state manager if we own the lock.
     ///
     /// Return `Ok(true)` if we saved, and `Ok(false)` if we didn't hold the lock.
