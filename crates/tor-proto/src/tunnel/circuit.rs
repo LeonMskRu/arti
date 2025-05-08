@@ -287,31 +287,6 @@ impl ClientCirc {
             .ok_or_else(|| internal!("no last hop index"))?)
     }
 
-    /// Return a description of all the hops in this circuit.
-    ///
-    /// This method is **deprecated** for several reasons:
-    ///   * It performs a deep copy.
-    ///   * It ignores virtual hops.
-    ///   * It's not so extensible.
-    ///
-    /// Use [`ClientCirc::path_ref()`] instead.
-    #[deprecated(since = "0.11.1", note = "Use path_ref() instead.")]
-    pub fn path(&self) -> Vec<OwnedChanTarget> {
-        #[allow(clippy::unnecessary_filter_map)] // clippy is blind to the cfg
-        self.mutable
-            .lock()
-            .expect("poisoned lock")
-            .path
-            .all_hops()
-            .into_iter()
-            .filter_map(|hop| match hop {
-                path::HopDetail::Relay(r) => Some(r),
-                #[cfg(feature = "hs-common")]
-                path::HopDetail::Virtual => None,
-            })
-            .collect()
-    }
-
     /// Return a [`Path`] object describing all the hops in this circuit.
     ///
     /// Note that this `Path` is not automatically updated if the circuit is
@@ -1683,9 +1658,18 @@ pub(crate) mod test {
         assert_eq!(circ.n_hops(), 4);
 
         // Do the path accessors report a reasonable outcome?
-        #[allow(deprecated)]
         {
-            let path = circ.path();
+            let path = circ
+                .path_ref()
+                .all_hops()
+                .into_iter()
+                .filter_map(|hop| match hop {
+                    path::HopDetail::Relay(r) => Some(r),
+                    #[cfg(feature = "hs-common")]
+                    path::HopDetail::Virtual => None,
+                })
+                .collect::<Vec<_>>();
+
             assert_eq!(path.len(), 4);
             use tor_linkspec::HasRelayIds;
             assert_eq!(path[3].ed_identity(), example_target().ed_identity());
