@@ -3,7 +3,6 @@
 use super::*;
 use crate::config::OnionServiceConfigPublisherView;
 use tor_cell::chancell::msg::HandshakeType;
-use tor_llcrypto::rng::EntropicRng;
 
 /// Build the descriptor.
 ///
@@ -13,15 +12,13 @@ use tor_llcrypto::rng::EntropicRng;
 /// Note: `blind_id_kp` is the blinded hidden service signing keypair used to sign descriptor
 /// signing keys (KP_hs_blind_id, KS_hs_blind_id).
 #[allow(clippy::too_many_arguments)]
-pub(super) fn build_sign<Rng: RngCore + CryptoRng, KeyRng: RngCore + EntropicRng>(
+pub(super) fn build_sign(
     keymgr: &Arc<KeyMgr>,
     config: &Arc<OnionServiceConfigPublisherView>,
     authorized_clients: Option<&RestrictedDiscoveryKeys>,
     ipt_set: &IptSet,
     period: TimePeriod,
     revision_counter: RevisionCounter,
-    rng: &mut Rng,
-    key_rng: &mut KeyRng,
     now: SystemTime,
 ) -> Result<VersionedDescriptor, FatalError> {
     // TODO: should this be configurable? If so, we should read it from the svc config.
@@ -64,7 +61,7 @@ pub(super) fn build_sign<Rng: RngCore + CryptoRng, KeyRng: RngCore + EntropicRng
     let hs_desc_sign = keymgr.get_or_generate::<HsDescSigningKeypair>(
         &hs_desc_sign_key_spec,
         keystore_selector,
-        key_rng,
+        &mut tor_llcrypto::rng::CautiousRng,
     )?;
 
     // TODO #1028: support introduction-layer authentication.
@@ -129,7 +126,7 @@ pub(super) fn build_sign<Rng: RngCore + CryptoRng, KeyRng: RngCore + EntropicRng
         .revision_counter(revision_counter)
         .subcredential(subcredential)
         .auth_clients(auth_clients.as_deref())
-        .build_sign(rng)
+        .build_sign(&mut tor_llcrypto::rng::CautiousRng)
         .map_err(|e| into_internal!("failed to build descriptor")(e))?;
 
     Ok(VersionedDescriptor {

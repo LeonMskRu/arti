@@ -1533,8 +1533,6 @@ impl<R: Runtime, M: Mockable> Reactor<R, M> {
                                 nickname=%imm.nickname, time_period=?time_period,
                                 "building descriptor"
                             );
-                            let mut rng = imm.mockable.thread_rng();
-                            let mut key_rng = tor_llcrypto::rng::CautiousRng;
 
                             // We're about to generate a new version of the descriptor,
                             // so let's generate a new revision counter.
@@ -1548,8 +1546,6 @@ impl<R: Runtime, M: Mockable> Reactor<R, M> {
                                 ipts,
                                 time_period,
                                 revision_counter,
-                                &mut rng,
-                                &mut key_rng,
                                 imm.runtime.wallclock(),
                             )?
                         };
