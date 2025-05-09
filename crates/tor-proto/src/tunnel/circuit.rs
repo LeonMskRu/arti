@@ -435,27 +435,6 @@ impl ClientCirc {
         Ok(conversation)
     }
 
-    /// Start an ad-hoc protocol exchange to the final hop on this circuit
-    ///
-    /// See the [`ClientCirc::start_conversation`] docs for more information.
-    #[cfg(feature = "send-control-msg")]
-    #[deprecated(since = "0.13.0", note = "Use start_conversation instead.")]
-    pub async fn start_conversation_last_hop(
-        &self,
-        msg: Option<tor_cell::relaycell::msg::AnyRelayMsg>,
-        reply_handler: impl MsgHandler + Send + 'static,
-    ) -> Result<Conversation<'_>> {
-        let last_hop = self
-            .mutable
-            .lock()
-            .expect("poisoned lock")
-            .path
-            .last_hop_num()
-            .ok_or_else(|| internal!("no last hop index"))?;
-
-        self.start_conversation(msg, reply_handler, last_hop).await
-    }
-
     /// Send an ad-hoc message to a given hop on the circuit, without expecting
     /// a reply.
     ///
