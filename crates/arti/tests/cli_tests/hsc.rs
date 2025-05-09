@@ -6,6 +6,8 @@ use assert_cmd::Command;
 const ONION_ADDR: &str = "fpqqmiwzqiv63jczrshh4qcmlxw6gujcai3arobq23wikt7hk7ojadid.onion";
 /// Length of the onion address without ".onion" suffix.
 pub const ADDR_LEN: usize = 56;
+/// Path to a test specific configuration
+pub const CFG_PATH: &str = "./tests/testcases/hsc/conf/hsc.toml";
 
 /// An `arti hsc` subcommand.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, derive_more::Display)]
@@ -22,7 +24,16 @@ enum ArtiHscCmd {
 fn build_hsc_cmd(sub_cmd: ArtiHscCmd, state_dir: &Path) -> Command {
     let opts = format!(r#"storage.state_dir="{}""#, state_dir.to_str().unwrap());
     let mut cmd = Command::cargo_bin("arti").unwrap();
-    cmd.args(["-o", &opts, "hsc", "key", &sub_cmd.to_string(), "--batch"]);
+    cmd.args([
+        "-c",
+        CFG_PATH,
+        "-o",
+        &opts,
+        "hsc",
+        "key",
+        &sub_cmd.to_string(),
+        "--batch",
+    ]);
 
     // Add subcommand-specific args
     match sub_cmd {
@@ -45,7 +56,6 @@ fn gen_key() {
     let mut cmd = build_hsc_cmd(ArtiHscCmd::Get, state_dir);
     cmd.write_stdin(ONION_ADDR);
     let output = cmd.output().unwrap();
-    println!("\n\n\n{:?}\n\n\n", output);
     assert!(output.status.success());
     assert!(String::from_utf8(output.stdout)
         .unwrap()
