@@ -1,4 +1,4 @@
-name: rust-cross
+name: rust-cross-gnu
 
 on:
   workflow_dispatch:
@@ -17,7 +17,7 @@ jobs:
         include:
           - build: windows
             os: windows-latest
-            target: x86_64-pc-windows-msvc
+            target: x86_64-pc-windows-gnu
 
     steps:
       - name: Checkout
@@ -40,7 +40,7 @@ jobs:
         with:
           use-cross: true
           command: build
-          args: --verbose --release --target ${{ matrix.target }}
+          args: --release --target ${{ matrix.target }} --features static-sqlite
 
       - name: Build archive
         shell: bash
