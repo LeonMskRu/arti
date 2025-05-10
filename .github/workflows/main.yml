@@ -22,13 +22,13 @@ jobs:
               if: matrix.os == 'windows-latest'
               run: cargo build -p arti --locked --release --features static-sqlite
 
-name: Upload release artifact
+- name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
           name: rust
           path: target/${{ matrix.BUILD_TARGET }}/rust
           
-name: Release Binary
+- name: Release Binary
   shell: bash
   run: |
     BIN_SUFFIX=""
@@ -54,8 +54,7 @@ name: Release Binary
       echo "ASSET=./${BIN_RELEASE}-${{ matrix.name }}.tar.gz" >> $GITHUB_ENV
     fi          
 
-name: Release
+- name: Release
   uses: softprops/action-gh-release@v1
   with:
     files: ${{ env.ASSET }} # Attach the binary to the release    
-    
