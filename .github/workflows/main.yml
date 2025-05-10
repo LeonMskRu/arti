@@ -1,4 +1,7 @@
-on: push
+name: Build and publish
+
+on:
+  workflow_dispatch:
 
 runs-on: ${{ matrix.os }}
 strategy:
@@ -6,17 +9,29 @@ strategy:
         include:
             - os: windows-latest
 
-uses: actions/checkout@v2
+jobs:
+    build:
+        name: Build for ${{ matrix.os }}
+        runs-on: ${{ matrix.os }}
+        strategy:
+            matrix:
+                include:
+                    - os: windows-latest
+                      artifact_name: sqlite3-stats.dll
 
-name: Build for Windows
-  if: matrix.os == 'windows-latest'
-  run: cargo build -p arti --locked --release
+        steps:
+            - uses: actions/checkout@v2
 
-name: Upload binaries to release
-  uses: svenstaro/upload-release-action@v2
-  with:
-      repo_token: ${{ secrets.GITHUB_TOKEN }}
-      file: dist/${{ matrix.artifact_name }}
-      asset_name: ${{ matrix.asset_name }}
-      tag: ${{ github.ref }}
-      
+            - run: mkdir target
+
+            - name: Build for Windows
+              if: matrix.os == 'windows-latest'
+              run: cargo build -p arti --locked --release
+
+            - name: Upload binaries to release
+              uses: svenstaro/upload-release-action@v2
+              with:
+                  repo_token: ${{ secrets.GITHUB_TOKEN }}
+                  file: dist/${{ matrix.artifact_name }}
+                  asset_name: ${{ matrix.asset_name }}
+                  tag: ${{ github.ref }}
