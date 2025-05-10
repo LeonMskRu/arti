@@ -64,9 +64,14 @@ jobs:
             echo "ASSET=$dirname.tar.gz" >> $GITHUB_ENV
           fi
 
+      - name: Get Previous tag
+        id: previous_tag
+        uses: "WyriHaximus/github-action-get-previous-tag@v1"
+        with:
+          fallback: 1.4.3
+          
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             ${{ env.ASSET }}
-            
