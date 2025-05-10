@@ -141,3 +141,7 @@ incremental = true
 # Inherits release build settings, but adds full debug symbols.
 debug = 2
 strip = "none"
+
+[dependencies.rusqlite]
+version = "0.35.0"
+features = ["bundled"]
