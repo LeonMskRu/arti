@@ -11,7 +11,7 @@ jobs:
             matrix:
                 include:
                     - os: windows-latest
-                      artifact_name: sqlite3.dll
+                      artifact_name: sqlite3.lib
 
         steps:
             - uses: actions/checkout@v2
