@@ -25,7 +25,7 @@ jobs:
 
       - name: Get the release version from the tag
         shell: bash
-        run: echo "VERSION=1.4.3" >> $GITHUB_ENV
+        run: echo "VERSION=v1.4.3" >> $GITHUB_ENV
 
       - name: Install Rust
         # Or @nightly if you want
