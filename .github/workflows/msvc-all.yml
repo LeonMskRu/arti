@@ -1,4 +1,4 @@
-name: rust-msvc
+name: rust-msvc-all
 
 on:
   workflow_dispatch:
