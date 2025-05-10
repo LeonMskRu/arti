@@ -48,7 +48,7 @@
 
 #[cfg(all(
     any(feature = "native-tls", feature = "rustls"),
-    any(feature = "async-std", feature = "tokio")
+    any(feature = "async-std", feature = "tokio", feature = "smol")
 ))]
 pub(crate) mod impls;
 pub mod task;
@@ -64,7 +64,7 @@ mod traits;
 pub mod unimpl;
 pub mod unix;
 
-#[cfg(any(feature = "async-std", feature = "tokio"))]
+#[cfg(any(feature = "async-std", feature = "tokio", feature = "smol"))]
 use std::io;
 pub use traits::{
     Blocking, CertifiedConn, CoarseTimeProvider, NetStreamListener, NetStreamProvider,
@@ -81,9 +81,15 @@ pub use timer::{SleepProviderExt, Timeout, TimeoutError};
 pub mod tls {
     pub use crate::traits::{CertifiedConn, TlsConnector};
 
-    #[cfg(all(feature = "native-tls", any(feature = "tokio", feature = "async-std")))]
+    #[cfg(all(
+        feature = "native-tls",
+        any(feature = "tokio", feature = "async-std", feature = "smol")
+    ))]
     pub use crate::impls::native_tls::NativeTlsProvider;
-    #[cfg(all(feature = "rustls", any(feature = "tokio", feature = "async-std")))]
+    #[cfg(all(
+        feature = "rustls",
+        any(feature = "tokio", feature = "async-std", feature = "smol")
+    ))]
     pub use crate::impls::rustls::RustlsProvider;
 }
 
@@ -93,15 +99,24 @@ pub mod tokio;
 #[cfg(all(any(feature = "native-tls", feature = "rustls"), feature = "async-std"))]
 pub mod async_std;
 
+#[cfg(all(any(feature = "native-tls", feature = "rustls"), feature = "smol"))]
+pub mod smol;
+
 pub use compound::{CompoundRuntime, RuntimeSubstExt};
 
 #[cfg(all(
     any(feature = "native-tls", feature = "rustls"),
     feature = "async-std",
-    not(feature = "tokio")
+    not(any(feature = "tokio", feature = "smol"))
 ))]
 use async_std as preferred_backend_mod;
-#[cfg(all(any(feature = "native-tls", feature = "rustls"), feature = "tokio"))]
+#[cfg(all(any(feature = "native-tls", feature = "rustls"), feature = "smol"))]
+use smol as preferred_backend_mod;
+#[cfg(all(
+    any(feature = "native-tls", feature = "rustls"),
+    feature = "tokio",
+    not(feature = "smol")
+))]
 use tokio as preferred_backend_mod;
 
 /// The runtime that we prefer to use, out of all the runtimes compiled into the
@@ -117,7 +132,7 @@ use tokio as preferred_backend_mod;
 /// after creating this or any other `Runtime`.
 #[cfg(all(
     any(feature = "native-tls", feature = "rustls"),
-    any(feature = "async-std", feature = "tokio")
+    any(feature = "async-std", feature = "tokio", feature = "smol")
 ))]
 #[derive(Clone)]
 pub struct PreferredRuntime {
@@ -127,7 +142,7 @@ pub struct PreferredRuntime {
 
 #[cfg(all(
     any(feature = "native-tls", feature = "rustls"),
-    any(feature = "async-std", feature = "tokio")
+    any(feature = "async-std", feature = "tokio", feature = "smol")
 ))]
 crate::opaque::implement_opaque_runtime! {
     PreferredRuntime { inner : preferred_backend_mod::PreferredRuntime }
@@ -135,7 +150,7 @@ crate::opaque::implement_opaque_runtime! {
 
 #[cfg(all(
     any(feature = "native-tls", feature = "rustls"),
-    any(feature = "async-std", feature = "tokio")
+    any(feature = "async-std", feature = "tokio", feature = "smol")
 ))]
 impl PreferredRuntime {
     /// Obtain a [`PreferredRuntime`] from the currently running asynchronous runtime.
@@ -320,7 +335,7 @@ pub mod cond {
 #[macro_export]
 #[cfg(all(
     any(feature = "native-tls", feature = "rustls"),
-    any(feature = "tokio", feature = "async-std"),
+    any(feature = "tokio", feature = "async-std", feature = "smol"),
 ))]
 macro_rules! test_with_all_runtimes {
     ( $fn:expr ) => {{
@@ -359,7 +374,7 @@ macro_rules! test_with_all_runtimes {
 #[macro_export]
 #[cfg(all(
     any(feature = "native-tls", feature = "rustls"),
-    any(feature = "tokio", feature = "async-std"),
+    any(feature = "tokio", feature = "async-std", feature = "smol"),
 ))]
 macro_rules! test_with_one_runtime {
     ( $fn:expr ) => {{
@@ -370,7 +385,7 @@ macro_rules! test_with_one_runtime {
 #[cfg(all(
     test,
     any(feature = "native-tls", feature = "rustls"),
-    any(feature = "async-std", feature = "tokio"),
+    any(feature = "async-std", feature = "tokio", feature = "smol"),
     not(miri), // Many of these tests use real sockets or SystemTime
 ))]
 mod test {
