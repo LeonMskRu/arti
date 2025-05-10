@@ -7,7 +7,6 @@ Each testable subcommand has a corresponding directory in `testcases`:
 tests
 ├── cli_tests
 │   ├── hsc.rs                 # hsc non-trycmd cli test
-│   ├── hss.rs                 # hss non-trycmd cli test
 │   ├── main.rs
 │   └── runner.rs              # trycmd test runner
 ├── README.md
@@ -38,7 +37,8 @@ See the [`trycmd`] docs for more information.
 > Note: [`trycmd`] is currently limited in functionality, when it is not
 > possible to write an exhaustive test suite using [`trycmd`] it is possible
 > to use [`assert_cmd`], and write the test inside the `cli_tests`'
-> submodules `hsc.rs` and `hss.rs`.
+> submodule `hsc.rs` (another submodule `hss.rs` will be created in
+> the future if needed).
 
 ### Debugging
 
