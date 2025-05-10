@@ -22,10 +22,40 @@ jobs:
               if: matrix.os == 'windows-latest'
               run: cargo build -p arti --locked --release --features static-sqlite
 
-            - name: Upload binaries to release
-              uses: svenstaro/upload-release-action@v2
-              with:
-                  repo_token: ${{ secrets.GITHUB_TOKEN }}
-                  file: target/${{ matrix.artifact_name }}
-                  asset_name: ${{ matrix.asset_name }}
-                  tag: ${{ github.ref }}
+name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust
+          path: target/${{ matrix.BUILD_TARGET }}/rust
+          
+name: Release Binary
+  shell: bash
+  run: |
+    BIN_SUFFIX=""
+    if [[ "${{ matrix.runner }}" == "windows-latest" ]]; then
+      BIN_SUFFIX=".exe"
+    fi
+
+    # The built binary output location
+    BIN_OUTPUT="target/${{ matrix.target }}/release/${PROJECT_NAME}${BIN_SUFFIX}"
+
+    # Define a better name for the final binary
+    BIN_RELEASE="${PROJECT_NAME}${BIN_SUFFIX}"
+    BIN_RELEASE_VERSIONED="${PROJECT_NAME}-${{ github.ref_name }}-${{ matrix.name }}${BIN_SUFFIX}"
+
+    # Move the built binary where you want it
+    mv "${BIN_OUTPUT}" "./${BIN_RELEASE}"
+    if [ "${{ matrix.os }}" = "windows-latest" ]; then
+      7z a "./${BIN_RELEASE}-${{ matrix.name }}.zip" "./${BIN_RELEASE}"
+      echo "ASSET=./${BIN_RELEASE}-${{ matrix.name }}.zip" >> $GITHUB_ENV
+    else
+
+      tar -czf "./${BIN_RELEASE}-${{ matrix.name }}.tar.gz" "./${BIN_RELEASE}"
+      echo "ASSET=./${BIN_RELEASE}-${{ matrix.name }}.tar.gz" >> $GITHUB_ENV
+    fi          
+
+name: Release
+  uses: softprops/action-gh-release@v1
+  with:
+    files: ${{ env.ASSET }} # Attach the binary to the release    
+    
