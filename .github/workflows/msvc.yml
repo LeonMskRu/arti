@@ -21,11 +21,11 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Get the release version from the tag
         shell: bash
-        run: echo "VERSION=v1.4.3" >> $GITHUB_ENV
+        run: echo "VERSION=1.4.3" >> $GITHUB_ENV
 
       - name: Install Rust
         # Or @nightly if you want
@@ -40,7 +40,7 @@ jobs:
         with:
 #         use-cross: true
           command: build
-          args: --release --target ${{ matrix.target }} --features static-sqlite
+          args: --release --target ${{ matrix.target }} --features static-sqlite -p arti -p tor-circmgr -p tor-cell -p tor-proto --bin arti
           
       - name: Build archive
         shell: bash
@@ -65,7 +65,8 @@ jobs:
           fi
 
       - name: Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
+        if: github.ref_type == 'tag'
         with:
           files: |
             ${{ env.ASSET }}
