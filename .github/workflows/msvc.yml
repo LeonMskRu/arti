@@ -45,5 +45,5 @@ jobs:
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
-          name: rust
-          path: target/${{ matrix.target }}/release/rust.exe
+          name: arti
+          path: target/${{ matrix.target }}/release/arti.exe
