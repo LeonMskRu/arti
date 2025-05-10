@@ -25,7 +25,7 @@ jobs:
 
       - name: Get the release version from the tag
         shell: bash
-        run: echo "VERSION=v1.4.3" >> $GITHUB_ENV
+        run: echo "VERSION=1.4.3" >> $GITHUB_ENV
 
       - name: Install Rust
         # Or @nightly if you want
@@ -42,36 +42,8 @@ jobs:
           command: build
           args: --release --target ${{ matrix.target }} --features static-sqlite -p arti -p tor-circmgr -p tor-cell -p tor-proto --bin arti
           
-      - name: Build archive
-        shell: bash
-        run: |
-          # Replace with the name of your binary
-          binary_name="arti"
-
-          dirname="$binary_name-${{ matrix.target }}"
-          mkdir "$dirname"
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            mv "target/${{ matrix.target }}/release/$binary_name.exe" "$dirname"
-          else
-            mv "target/${{ matrix.target }}/release/$binary_name" "$dirname"
-          fi
-
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            7z a "$dirname.zip" "$dirname"
-            echo "ASSET=$dirname.zip" >> $GITHUB_ENV
-          else
-            tar -czf "$dirname.tar.gz" "$dirname"
-            echo "ASSET=$dirname.tar.gz" >> $GITHUB_ENV
-          fi
-
-      - name: Get Previous tag
-        id: previous_tag
-        uses: "WyriHaximus/github-action-get-previous-tag@v1"
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
         with:
-          fallback: 1.4.3
-          
-      - name: Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            ${{ env.ASSET }}
+          name: rust
+          path: target/${{ matrix.BUILD_TARGET }}/rust
