@@ -1,4 +1,4 @@
-name: Build and publish
+name: rust-windows
 
 on:
   workflow_dispatch:
