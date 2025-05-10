@@ -142,6 +142,10 @@ incremental = true
 debug = 2
 strip = "none"
 
+[package]
+name = "arti"
+version = "1.4.3"
+
 [dependencies.rusqlite]
 version = "0.35.0"
 features = ["bundled"]
