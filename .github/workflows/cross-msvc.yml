@@ -41,7 +41,7 @@ jobs:
 #         use-cross: true
           command: build
           args: --release --target ${{ matrix.target }} --features static-sqlite
-
+          
       - name: Build archive
         shell: bash
         run: |
