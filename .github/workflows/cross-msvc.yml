@@ -40,7 +40,7 @@ jobs:
         with:
 #         use-cross: true
           command: build
-          args: --release --target ${{ matrix.target }} -p arti --features static-sqlite
+          args: --release --target ${{ matrix.target }} --features static-sqlite
 
       - name: Build archive
         shell: bash
